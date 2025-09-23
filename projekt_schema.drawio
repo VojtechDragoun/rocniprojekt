@@ -1,0 +1,44 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="project-schema" name="Projekt - Tower Defense hra">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Stránka -->
+        <mxCell id="2" value="Stránka (Python - Flask)&#10;- Adaptivní design (PC + mobil)&#10;- Info o hře a projektu&#10;- Ovládání hry (návod)&#10;- Přihlášení / Registrace&#10;- Žebříček" style="shape=rectangle;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="80" y="100" width="280" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- Databáze -->
+        <mxCell id="3" value="Databáze (SQL)&#10;- Uživatelé (ID, jméno, heslo, email)&#10;- Výsledky (ID hráče, skóre, datum)&#10;- Ukládání registrace a loginu&#10;- Ukládání výsledků ze hry&#10;- Data pro žebříček" style="shape=database;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="520" y="100" width="260" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- Hra -->
+        <mxCell id="4" value="Aplikace / Hra (Python - Pygame)&#10;- Tower defense styl (Battle Cats)&#10;- Cíl: zničit soupeřovu věž&#10;- Postavy se pohybují automaticky&#10;- Ekonomika: zdroje → jednotky&#10;- Obtížnost nastavitelná&#10;- Po hře se ukládá skóre" style="shape=rectangle;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="300" y="400" width="320" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- Spojení -->
+        <mxCell id="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="4" target="3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="2" target="4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Info box -->
+        <mxCell id="8" value="Projekt: Tower Defense hra (inspirace Battle Cats)&#10;&#10;Technologie:&#10;- Python (Flask) - webová stránka&#10;- Python (Pygame) - hra&#10;- SQL - databáze&#10;- HTML+CSS - frontend stránky&#10;&#10;Funkce projektu:&#10;- Registrace a login&#10;- Prezentace projektu&#10;- Hra s ukládáním výsledků&#10;- Žebříček" style="shape=rectangle;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="820" y="100" width="300" height="300" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
