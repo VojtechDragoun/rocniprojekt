@@ -1,0 +1,54 @@
+:root {
+  --accent: #2b6cb0;
+  --card: #fff;
+  --bg: #f8fafc;
+  --text: #111827;
+  --radius: 10px;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.container {
+  max-width: 800px;
+  margin: 60px auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 30px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+
+h1, h2, h3 {
+  color: var(--accent);
+}
+
+form label {
+  display: block;
+  margin-top: 12px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 20px;
+  cursor: pointer;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
