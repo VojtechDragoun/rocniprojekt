@@ -1,4 +1,0 @@
-log potřebuje
--kde v kodu v jaké funkci
--v jakém čase
--data, po jakém inputu, citlivá data zaheslovaná
