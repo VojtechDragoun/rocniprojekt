@@ -103,24 +103,13 @@
   - mazat příkazy z databáze)
 
 ---
-???
+
 ## 10. Databázový návrh
 - K databázi je vytvořen ER diagram
 - Databáze obsahuje vztahy:
   - 1 : N (uživatel – jízdy)
   - 1 : N (jízda – příkazy)
-- Při čtení dat jsou využívány JOIN dotazy
 
----
-
-## 11. SQL skripty
-- Projekt obsahuje SQL skripty:
-  - `CREATE` – vytvoření tabulek
-  - `INSERT` – vložení vzorových dat
-  - `SELECT` – výběr dat včetně JOIN, filtrování a řazení
-  - `UPDATE` – úprava dat
-  - `DELETE` – mazání dat
-???
 ---
 
 ## 12. Dokumentace a algoritmy
