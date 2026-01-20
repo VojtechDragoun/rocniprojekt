@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Hlavní stránka{% endblock %}
+
+{% block content %}
+  <!--
+    index.html
+    ----------
+    Hlavní landing stránka projektu.
+    Obsah je uvnitř bloku "content", zbytek (navbar, CSS) bere z base.html
+  -->
+  <div class="card">
+    <h1>RCcar – ovládání autíčka přes Wi-Fi</h1>
+    <p>
+      Tento projekt propojuje Flask web aplikaci, SQLite databázi a ESP32 hardware
+      pro řízení RC autíčka (motory + řízení + případně světla).
+    </p>
+
+    <p>
+      Na dashboardu uvidíš uložené jízdy (uživatel + délka jízdy).
+    </p>
+
+    <a class="btn" href="{{ url_for('dashboard') }}">Otevřít dashboard</a>
+    <a class="btn" href="{{ url_for('info') }}" style="margin-left: 8px;">Info o projektu</a>
+  </div>
+{% endblock %}

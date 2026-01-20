@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}RCcar{% endblock %}</title>
+
+  <!-- CSS: máš ho ve web/static_css/style.css -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a class="brand" href="{{ url_for('index') }}">RCcar</a>
+
+      <nav class="nav-links">
+        <a href="{{ url_for('index') }}">Domů</a>
+        <a href="{{ url_for('info') }}">Info</a>
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      </nav>
+
+      <div class="nav-right">
+        <div class="dropdown" tabindex="0">
+          <button class="dropdown-btn" type="button">Účet ▾</button>
+          <div class="dropdown-menu">
+            <a href="{{ url_for('login') }}">Přihlásit</a>
+            <a href="{{ url_for('register') }}">Registrovat</a>
+            <a href="{{ url_for('logout') }}">Odhlásit</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

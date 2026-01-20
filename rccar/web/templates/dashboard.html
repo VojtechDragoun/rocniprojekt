@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Dashboard{% endblock %}
+
+{% block content %}
+  <!--
+    dashboard.html
+    --------------
+    Zobrazuje data z databáze (např. seznam jízd).
+    Předpoklad: z Flasku pošleš do šablony proměnnou rides (list záznamů).
+    Např. rides = [{"username":"pepa","duration":120,"created_at":"2026-01-13"}]
+  -->
+  <div class="card">
+    <h1>Dashboard – historie jízd</h1>
+    <p>Zde se zobrazují záznamy o jízdách uložené v databázi.</p>
+
+    {% if rides and rides|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>Uživatel</th>
+            <th>Délka jízdy (s)</th>
+            <th>Datum</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rides %}
+            <tr>
+              <td>{{ r.username }}</td>
+              <td>{{ r.duration }}</td>
+              <td>{{ r.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>Zatím nejsou v databázi žádné jízdy.</em></p>
+    {% endif %}
+  </div>
+{% endblock %}

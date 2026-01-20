@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Přihlášení{% endblock %}
+
+{% block content %}
+  <!--
+    login.html
+    ----------
+    Přihlašovací formulář.
+    Poznámka: action url_for('login') předpokládá route /login (GET+POST).
+  -->
+  <div class="card">
+    <h1>Přihlášení</h1>
+    <p>Vlož své přihlašovací údaje.</p>
+
+    <form class="form" method="POST" action="{{ url_for('login') }}">
+      <div>
+        <label for="username">Uživatelské jméno</label>
+        <input id="username" name="username" type="text" placeholder="např. admin" required>
+      </div>
+
+      <div>
+        <label for="password">Heslo</label>
+        <input id="password" name="password" type="password" placeholder="••••••••" required>
+      </div>
+
+      <button class="btn" type="submit">Přihlásit</button>
+    </form>
+
+    <p style="margin-top: 12px;">
+      Nemáš účet? <a href="{{ url_for('register') }}">Zaregistruj se</a>
+    </p>
+  </div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Registrace{% endblock %}
+
+{% block content %}
+  <!--
+    register.html
+    -------------
+    Registrační formulář.
+    V praxi bys heslo hashoval (werkzeug.security) a ukládal do DB.
+  -->
+  <div class="card">
+    <h1>Registrace</h1>
+    <p>Vytvoř si účet uživatele / admina.</p>
+
+    <form class="form" method="POST" action="{{ url_for('register') }}">
+      <div>
+        <label for="username">Uživatelské jméno</label>
+        <input id="username" name="username" type="text" placeholder="např. pepa" required>
+      </div>
+
+      <div>
+        <label for="password">Heslo</label>
+        <input id="password" name="password" type="password" placeholder="••••••••" required>
+      </div>
+
+      <div>
+        <label for="role">Role (jednoduché řešení)</label>
+        <!--
+          Pokud chceš role řešit správně, uděláš to jako select + validace na backendu.
+          Pro školní projekt ale stačí text nebo select.
+        -->
+        <input id="role" name="role" type="text" placeholder="user / admin" required>
+      </div>
+
+      <button class="btn" type="submit">Registrovat</button>
+    </form>
+
+    <p style="margin-top: 12px;">
+      Už máš účet? <a href="{{ url_for('login') }}">Přihlásit</a>
+    </p>
+  </div>
+{% endblock %}

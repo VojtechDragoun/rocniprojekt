@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Info{% endblock %}
+
+{% block content %}
+  <!--
+    info.html
+    ---------
+    Stránka s popisem projektu a architekturou.
+  -->
+  <div class="card">
+    <h1>Informace o projektu</h1>
+
+    <h2>Co projekt řeší</h2>
+    <p>
+      Webové rozhraní a backend (Flask) umožní uživateli ovládat autíčko,
+      ukládat záznamy o jízdách do databáze a zobrazovat historii jízd.
+    </p>
+
+    <h2>Technologie</h2>
+    <p>
+      Flask (Python), HTML/CSS, SQLite, ESP32 (Wi-Fi komunikace), motory/servo.
+    </p>
+
+    <h2>Architektura</h2>
+    <p>
+      PC/Web → Flask backend → komunikace na ESP32 (příkazy) + DB (log jízd).
+    </p>
+  </div>
+{% endblock %}
