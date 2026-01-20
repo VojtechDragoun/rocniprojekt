@@ -1,39 +1,45 @@
 """
-app.py (Flask backend) pro projekt RCcar
+app.py – Flask backend pro projekt RCcar
 ======================================
 
-Cíl:
-- Obsloužit HTML šablony v /web/templates
-- Obsloužit statické soubory (CSS) v /web/static_css
-- Přidat jednoduché přihlášení/registraci (uživatel/admin)
-- Ukládat a číst data o jízdách ze SQLite databáze
+Tento soubor je "server" části projektu.
+Spouštíš ho příkazem:  python app.py
+a Flask pak obsluhuje webové stránky na: http://localhost:5000/
 
-Poznámky k tvé struktuře projektu (dle screenshotu):
-- web/
-  - app.py                <-- tento soubor
-  - templates/            <-- HTML šablony
-  - static_css/style.css  <-- společný CSS
+Co tento backend umí:
+1) Vrací (renderuje) HTML šablony z /templates
+   - index.html, info.html, login.html, register.html, dashboard.html
+2) Servíruje statické soubory (CSS) ze složky /static
+   - například style.css je dostupný na URL: /static/style.css
+3) Uživatelé:
+   - registrace (uložení do DB)
+   - login (ověření z DB + uložení do session)
+   - logout (vymazání session)
+4) Databáze SQLite:
+   - tabulka users: uživatelé
+   - tabulka rides: jízdy (doba jízdy + datum + vazba na uživatele)
+5) Dashboard:
+   - přístup jen pro přihlášené (autentizace)
+   - admin vidí všechny jízdy, user vidí jen svoje (autorizace)
 
-Protože CSS není ve výchozí složce 'static', nastavíme Flasku:
-- static_folder="static_css"
-- static_url_path="/static"
-Tím pádem bude url_for('static', filename='style.css') fungovat správně.
-
-Databáze:
-- Uložíme ji do /database/rccar.db (složka database je na stejné úrovni jako web/)
-- Použijeme standardní sqlite3 (bez ORM), aby to bylo pro školní projekt srozumitelné.
-
-Bezpečnost:
-- Hesla nikdy neukládat jako čistý text -> použijeme hashování (werkzeug.security)
-- Přihlášení budeme držet přes Flask session (cookie podepsaná SECRET_KEY)
+Poznámka k bezpečnosti:
+- Heslo nikdy neukládáme jako text.
+- Ukládáme jen HASH hesla (nevratná "otisk" funkce).
 """
 
-from __future__ import annotations
+from __future__ import annotations  # umožní psát typy "dopředu" (není nutné, ale užitečné)
 
-import sqlite3
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+import sqlite3  # standardní knihovna pro SQLite databázi (bez ORM)
+from pathlib import Path  # práce s cestami je tu bezpečnější než stringy
+from typing import Any, Dict, List, Optional  # typová nápověda (lepší čitelnost)
 
+# Flask:
+# - Flask: hlavní objekt aplikace
+# - render_template: vezme HTML ze /templates a doplní do něj data (Jinja2)
+# - request: čtení dat z formulářů (POST)
+# - redirect + url_for: přesměrování na jinou stránku
+# - session: uložení stavu přihlášení (cookie)
+# - flash: krátké zprávy pro uživatele ("OK" / "error")
 from flask import (
     Flask,
     render_template,
@@ -43,6 +49,10 @@ from flask import (
     session,
     flash,
 )
+
+# Werkzeug je knihovna, která Flask používá interně.
+# generate_password_hash -> udělá hash hesla
+# check_password_hash -> ověří heslo proti uloženému hashi
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -50,44 +60,65 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # 1) Vytvoření Flask aplikace + nastavení cest
 # ---------------------------------------------------------------------
 
-# Absolutní cesta ke složce web/ (tam, kde je tento app.py)
+# BASE_DIR = cesta ke složce, kde leží tento app.py (tedy /web)
 BASE_DIR = Path(__file__).resolve().parent
 
-# Projektový root = o úroveň výš (tam máš složku database/)
+# PROJECT_ROOT = složka o úroveň výš (např. /rccar)
+# tím se dostaneme k /database, i když je mimo web složku
 PROJECT_ROOT = BASE_DIR.parent
 
-# Cesta k databázi (pokud složka database existuje dle screenshotu)
+# DB_DIR = cesta na složku database/
 DB_DIR = PROJECT_ROOT / "database"
-DB_DIR.mkdir(exist_ok=True)  # když složka neexistuje, vytvoří se
 
+# mkdir(exist_ok=True):
+# - když složka neexistuje, vytvoří ji
+# - když existuje, nic se nestane (bez erroru)
+DB_DIR.mkdir(exist_ok=True)
+
+# DB_PATH = konkrétní soubor databáze
 DB_PATH = DB_DIR / "rccar.db"
 
-# Flask aplikace:
-# - template_folder necháme default (templates/) -> Flask ji automaticky najde vedle app.py
-# - static_folder nastavíme na "static_css", protože tak to máš ve struktuře
-# - static_url_path necháme "/static", aby URL vypadaly hezky: /static/style.css
+
+# Flask aplikace
+# ==============
+# Defaultně Flask hledá:
+# - šablony v /templates (vedle app.py)
+# - statické soubory ve /static (vedle app.py)
+#
+# Ty explicitně nastavuješ:
+# static_folder="static"
+# static_url_path="/static"
+#
+# To znamená:
+# - soubory v web/static/ budou dostupné přes URL /static/
+# - např. web/static/style.css => /static/style.css
 app = Flask(
     __name__,
     static_folder="static",
     static_url_path="/static",
 )
 
-# Secret key je nutný pro session (podepisuje cookie)
-# V reálném projektu by byl v .env, tady pro školní projekt stačí natvrdo.
+# SECRET_KEY je důležitý:
+# - Flask podepisuje session cookie (aby ji uživatel nemohl snadno měnit)
+# V reálném projektu to patří do .env (tajné).
 app.config["SECRET_KEY"] = "CHANGE_ME_TO_SOMETHING_RANDOM_AND_SECRET"
 
 
 # ---------------------------------------------------------------------
-# 2) Pomocné DB funkce
+# 2) Pomocné DB funkce (SQLite)
 # ---------------------------------------------------------------------
 
 def get_db_connection() -> sqlite3.Connection:
     """
-    Vytvoří připojení k SQLite DB.
+    Vytvoří nové připojení k databázi.
 
-    row_factory = sqlite3.Row znamená:
-    - výsledky SELECTu se budou chovat jako slovník (můžeš psát row["username"])
-    - a zároveň funguje i přístup row.keys(), atd.
+    Proč to děláme jako funkci:
+    - nechceme mít jedno spojení "napořád"
+    - pro každý request se často otevře spojení, provede dotaz a zavře
+
+    row_factory = sqlite3.Row:
+    - výsledky SELECTu jsou přístupné jako slovník:
+        row["username"], row["role"], ...
     """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -96,23 +127,25 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     """
-    Vytvoří tabulky, pokud neexistují.
+    Inicializace DB = vytvoření tabulek, pokud ještě neexistují.
 
     Tabulka users:
-    - id (PK)
-    - username (unikátní)
-    - password_hash (hash hesla)
-    - role (např. 'user' nebo 'admin')
+    - id: primární klíč (autoincrement)
+    - username: unikátní jméno (nesmí se opakovat)
+    - password_hash: hash hesla (ne heslo!)
+    - role: 'user' nebo 'admin'
 
     Tabulka rides:
-    - id (PK)
-    - user_id (FK na users.id)
-    - duration (délka jízdy v sekundách)
-    - created_at (datum/čas záznamu, default CURRENT_TIMESTAMP)
+    - id: primární klíč
+    - user_id: cizí klíč na users.id (vazba jízdy na uživatele)
+    - duration: délka jízdy v sekundách (INTEGER)
+    - created_at: datum/čas vytvoření záznamu (automaticky)
     """
     conn = get_db_connection()
     cur = conn.cursor()
 
+    # CREATE TABLE IF NOT EXISTS:
+    # - tabulka se vytvoří jen pokud zatím není v DB
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,27 +165,29 @@ def init_db() -> None:
         );
     """)
 
-    conn.commit()
-    conn.close()
+    conn.commit()  # potvrzení změn
+    conn.close()   # zavření spojení
 
 
-# Inicializace DB hned při startu aplikace
+# Zavoláme init_db hned při startu serveru,
+# aby DB existovala ještě před prvním requestem
 init_db()
 
 
 # ---------------------------------------------------------------------
-# 3) Autentizace: pomocné funkce + "decorators"
+# 3) Autentizace (login/register) – pomocné funkce
 # ---------------------------------------------------------------------
 
 def current_user() -> Optional[Dict[str, Any]]:
     """
-    Vrátí slovník s informacemi o přihlášeném uživateli,
+    Vrátí informace o přihlášeném uživateli (ze session),
     nebo None, pokud nikdo přihlášený není.
 
-    Data držíme v session:
-    - session["user_id"]
-    - session["username"]
-    - session["role"]
+    Session je cookie na straně klienta, kterou Flask podepisuje.
+    Do session ukládáme:
+    - user_id (ID v DB)
+    - username
+    - role
     """
     if "user_id" not in session:
         return None
@@ -166,33 +201,36 @@ def current_user() -> Optional[Dict[str, Any]]:
 
 def login_required() -> bool:
     """
-    Jednoduchý "check" funkce:
-    - vrací True pokud je uživatel přihlášen
-    - jinak False
-
-    Pro školní projekt je to čitelné.
-    (Alternativa je dělat dekorátor @login_required, ale tady to nechávám
-     jednoduše, aby ses v tom neztratil.)
+    Jednoduchá kontrola přihlášení.
+    - True: uživatel je přihlášen
+    - False: uživatel není přihlášen
     """
     return "user_id" in session
 
 
 def admin_required() -> bool:
     """
-    Vrací True, pokud je přihlášený admin.
+    Kontrola admin práv.
+    - musí být přihlášen a role musí být 'admin'
     """
     return login_required() and session.get("role") == "admin"
 
 
 # ---------------------------------------------------------------------
-# 4) Routy (stránky)
+# 4) ROUTY (URL endpointy)
 # ---------------------------------------------------------------------
+# Route = URL adresa, kterou backend obsluhuje.
+# Např. @app.route("/") znamená:
+# - když uživatel otevře http://localhost:5000/
+# - spustí se funkce index()
 
 @app.route("/")
 def index():
     """
-    Hlavní stránka.
-    Jen renderuje templates/index.html
+    Hlavní stránka / (index)
+    - jen renderuje HTML šablonu index.html
+    - do šablony posíláme user=current_user()
+      => šablona může vědět, jestli je uživatel přihlášený
     """
     return render_template("index.html", user=current_user())
 
@@ -200,7 +238,7 @@ def index():
 @app.route("/info")
 def info():
     """
-    Info stránka projektu.
+    Info stránka
     """
     return render_template("info.html", user=current_user())
 
@@ -208,46 +246,40 @@ def info():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """
-    Registrace uživatele/admina.
+    Registrace uživatele.
 
     GET:
-      - zobrazí formulář
+      - zobrazí registrační formulář
 
     POST:
-      - vezme data z formuláře
-      - zkontroluje základní validaci
-      - uloží uživatele do DB (heslo uloží jako hash)
+      - přečte data z formuláře
+      - zvaliduje je
+      - uloží uživatele do DB
       - přesměruje na login
     """
     if request.method == "GET":
         return render_template("register.html", user=current_user())
 
-    # ---------------------------
-    # POST - čtení formuláře
-    # ---------------------------
+    # ---------- POST (odeslání formuláře) ----------
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
     role = (request.form.get("role") or "").strip().lower()
 
-    # ---------------------------
-    # Základní validace
-    # ---------------------------
+    # Základní validace:
     if not username or not password or not role:
         flash("Vyplň všechna pole.", "error")
         return redirect(url_for("register"))
 
+    # Povolené role (jednoduché RBAC - role based access control)
     if role not in ("user", "admin"):
-        # Pro školní projekt můžeš povolit jen tyto dvě role,
-        # ať je to jasné a kontrolované.
         flash("Role musí být 'user' nebo 'admin'.", "error")
         return redirect(url_for("register"))
 
-    # Hash hesla (nikdy neukládat heslo jako text)
+    # Hash hesla:
+    # - uloží se do DB (heslo v čistém textu nikdy!)
     password_hash = generate_password_hash(password)
 
-    # ---------------------------
     # Uložení do DB
-    # ---------------------------
     try:
         conn = get_db_connection()
         conn.execute(
@@ -257,7 +289,7 @@ def register():
         conn.commit()
         conn.close()
     except sqlite3.IntegrityError:
-        # IntegrityError typicky znamená porušení UNIQUE (username už existuje)
+        # IntegrityError často znamená: username už existuje (UNIQUE constraint)
         flash("Uživatel s tímto jménem už existuje.", "error")
         return redirect(url_for("register"))
 
@@ -268,14 +300,14 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """
-    Přihlášení.
+    Login.
 
     GET:
-      - zobrazí formulář
+      - zobrazí login formulář
 
     POST:
-      - ověří username + password
-      - pokud sedí, uloží do session user_id/username/role
+      - ověří jméno a heslo vůči DB
+      - pokud sedí, nastaví session
       - přesměruje na dashboard
     """
     if request.method == "GET":
@@ -288,6 +320,7 @@ def login():
         flash("Vyplň uživatelské jméno i heslo.", "error")
         return redirect(url_for("login"))
 
+    # Najdeme uživatele v DB podle username:
     conn = get_db_connection()
     user_row = conn.execute(
         "SELECT id, username, password_hash, role FROM users WHERE username = ?",
@@ -299,12 +332,12 @@ def login():
         flash("Uživatel neexistuje.", "error")
         return redirect(url_for("login"))
 
-    # Ověření hesla proti uloženému hashi
+    # Ověření hesla:
     if not check_password_hash(user_row["password_hash"], password):
         flash("Špatné heslo.", "error")
         return redirect(url_for("login"))
 
-    # Pokud je vše OK, uložíme do session info o uživateli
+    # Úspěšné přihlášení => session
     session["user_id"] = user_row["id"]
     session["username"] = user_row["username"]
     session["role"] = user_row["role"]
@@ -316,8 +349,9 @@ def login():
 @app.route("/logout")
 def logout():
     """
-    Odhlášení:
-    - smažeme session (uživatel je pak "anonymní")
+    Logout:
+    - session.clear() odstraní všechny hodnoty ze session cookie
+    - uživatel je opět "nepřihlášen"
     """
     session.clear()
     flash("Odhlášeno.", "success")
@@ -327,18 +361,18 @@ def logout():
 @app.route("/dashboard")
 def dashboard():
     """
-    Dashboard – historie jízd z DB.
+    Dashboard = stránka se záznamy jízd.
 
-    Aby to dávalo smysl, typicky chceš, aby dashboard viděl jen přihlášený uživatel.
-    Takže:
-    - pokud není přihlášen -> přesměruj na login
+    1) Ochrana:
+       - bez přihlášení sem nepustíme
+       - pokud user není v session => redirect na login
 
-    Data posíláme do dashboard.html jako "rides".
+    2) Načtení dat:
+       - admin vidí všechny jízdy
+       - user vidí pouze své jízdy
 
-    POZOR:
-    Tvoje šablona dashboard.html z mého předchozího návrhu očekává:
-      r.username, r.duration, r.created_at
-    Proto v SELECTu děláme JOIN users + rides a aliasujeme sloupce.
+    3) Render:
+       - posíláme rides do dashboard.html
     """
     if not login_required():
         flash("Nejdřív se přihlas.", "error")
@@ -346,10 +380,8 @@ def dashboard():
 
     conn = get_db_connection()
 
-    # Pokud chceš:
-    # - admin vidí všechny jízdy
-    # - user vidí jen svoje jízdy
     if admin_required():
+        # Admin má přístup ke všemu:
         rows = conn.execute("""
             SELECT
                 rides.id,
@@ -361,6 +393,7 @@ def dashboard():
             ORDER BY rides.created_at DESC;
         """).fetchall()
     else:
+        # Běžný user vidí pouze svoje:
         rows = conn.execute("""
             SELECT
                 rides.id,
@@ -375,27 +408,22 @@ def dashboard():
 
     conn.close()
 
-    # Převedeme sqlite3.Row na "objekt-like" strukturu, aby šablona mohla psát r.username
-    # Nejjednodušší je použít dict, ale v Jinja jde i dict přístup přes tečku.
+    # Převedeme sqlite3.Row na list dictů,
+    # aby se s tím dobře pracovalo v Jinja šabloně
     rides: List[Dict[str, Any]] = [dict(r) for r in rows]
 
     return render_template("dashboard.html", rides=rides, user=current_user())
 
 
-# ---------------------------------------------------------------------
-# 5) Testovací route – vytvoření jízdy (jen pro demo / vývoj)
-# ---------------------------------------------------------------------
 @app.route("/ride/add_demo")
 def add_demo_ride():
     """
-    Tohle je pomocná route, aby sis mohl rychle "naklikat" testovací data do DB.
+    Pomocná route:
+    - vloží demo jízdu (duration 120s) přihlášenému uživateli
+    - hodí tě na dashboard
 
-    - musíš být přihlášen
-    - vloží se jedna demo jízda (např. duration 120s)
-    - pak tě to hodí na dashboard
-
-    Až budeš mít reálné ukládání jízd z ovládání autíčka,
-    tuhle route klidně smažeš.
+    Používá se pro otestování DB a dashboardu,
+    dokud ještě nemáš napojené reálné řízení autíčka.
     """
     if not login_required():
         flash("Nejdřív se přihlas, ať víme komu jízdu uložit.", "error")
@@ -414,18 +442,37 @@ def add_demo_ride():
 
 
 # ---------------------------------------------------------------------
-# 6) Spuštění aplikace
+# 5) Spuštění aplikace
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     """
-    Spuštění:
-      - otevři terminál ve složce web/
-      - python app.py
+    Tento blok se spustí jen když spouštíš soubor přímo:
+      python app.py
 
     debug=True:
-      - auto reload při změně kódu
-      - detailní error page
+      - automatický restart při změně kódu
+      - podrobné chybové stránky
+
     host="0.0.0.0":
-      - aplikace dostupná i z jiné IP v síti (užitečné při testu na mobilu/ESP32)
+      - server poslouchá na všech IP (užitečné, když chceš testovat z mobilu)
     """
     app.run(debug=True, host="0.0.0.0", port=5000)
+
+
+"""
+    render_template(): vezme HTML z templates/ a vyrenderuje ho (Jinja2 doplní proměnné)
+
+    static/: Flask automaticky servíruje statiku (CSS/JS/obrázky) přes /static/...
+
+    session: drží info „uživatel přihlášen / nepřihlášen“, ukládá se do cookie
+
+    flash(): krátké zprávy pro uživatele (success/error)
+
+    hash hesla: bezpečný způsob ukládání hesel
+
+    autentizace: „kdo jsi“ (login)
+
+    autorizace: „co smíš“ (admin vidí vše, user jen své)    
+   
+   
+"""
