@@ -1,4 +1,6 @@
-3Stránka se spouští ve složce web souborem app.py
+Pro projekt jsou použity jazyky: Python, Html, css, sql?
 
+pip instak ....
 2popsat jak stáhnout knihovny + ctrl +c +ctrlv
-1jazyky
+
+Stránka se spoští přes soubor app.py, kde se potom vygeneruje odkaz na stránku
