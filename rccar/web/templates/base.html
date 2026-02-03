@@ -5,12 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}RCcar{% endblock %}</title>
 
-  <!-- CSS: máš ho ve web/static_css/style.css -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
-  <!-- Navbar -->
   <header class="navbar">
     <div class="navbar-inner">
       <a class="brand" href="{{ url_for('index') }}">RCcar</a>
@@ -22,17 +20,36 @@
       </nav>
 
       <div class="nav-right">
-        <div class="dropdown" tabindex="0">
-          <button class="dropdown-btn" type="button">Účet ▾</button>
-          <div class="dropdown-menu">
-            <a href="{{ url_for('login') }}">Přihlásit</a>
-            <a href="{{ url_for('register') }}">Registrovat</a>
-            <a href="{{ url_for('logout') }}">Odhlásit</a>
+        {% if user %}
+          <span style="color:#cbd5e1;">
+            Přihlášen jako <b>{{ user.username }}</b> ({{ user.role }})
+          </span>
+          <a class="btn" href="{{ url_for('logout') }}" style="margin-left:10px;">Odhlásit</a>
+        {% else %}
+          <div class="dropdown" tabindex="0">
+            <button class="dropdown-btn" type="button">Účet ▾</button>
+            <div class="dropdown-menu">
+              <a href="{{ url_for('login') }}">Přihlásit</a>
+              <a href="{{ url_for('register') }}">Registrovat</a>
+            </div>
           </div>
-        </div>
+        {% endif %}
       </div>
     </div>
   </header>
+
+  <!-- FLASH ZPRÁVY (zobrazí se po redirectu / chybě / úspěchu) -->
+  <div class="container" style="padding-top: 12px; padding-bottom: 0;">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="alerts">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+  </div>
 
   <main class="container">
     {% block content %}{% endblock %}
