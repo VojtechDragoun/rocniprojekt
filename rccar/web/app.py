@@ -2,17 +2,16 @@
 app.py – Flask backend pro projekt RCcar
 ======================================
 
-Funkce:
-- registrace -> uloží uživatele do SQLite (users)
-- login -> ověří heslo, nastaví session
-- logout -> smaže session
-- dashboard -> jen pro přihlášené
-- flash zprávy -> používáme pro informace a chyby (success/error/info)
-  (zobrazují se v base.html)
+Navíc oproti základní verzi:
+- /admin stránka (jen pro admina)
+- admin vidí tabulky users + rides
+- admin může mazat:
+  - jízdy (DELETE ride)
+  - uživatele (DELETE user) -> smaže i jeho jízdy díky ON DELETE CASCADE
 
-Poznámka:
-- Hesla ukládáme jako hash.
-- SQLite foreign keys zapínáme přes PRAGMA pro každé připojení.
+Bezpečnost:
+- Mazání děláme přes POST (ne přes GET).
+- Route /admin* je chráněná admin_required().
 """
 
 from __future__ import annotations
@@ -61,8 +60,8 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     """
-    Vytvoří tabulky, pokud neexistují.
-    (Bezpečné i když už je DB vytvořená.)
+    Vytvoří tabulky, pokud neexistují (safe).
+    Pokud už tabulky máš, nic to nepřepíše.
     """
     conn = get_db_connection()
     conn.executescript("""
@@ -113,7 +112,7 @@ def admin_required() -> bool:
 
 
 # ---------------------------------------------------------------------
-# ROUTES
+# ROUTES – veřejné stránky
 # ---------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -134,7 +133,6 @@ def register():
     password = request.form.get("password") or ""
     role = (request.form.get("role") or "user").strip().lower()
 
-    # validace
     if not username or not password:
         flash("Vyplň uživatelské jméno i heslo.", "error")
         return redirect(url_for("register"))
@@ -180,15 +178,10 @@ def login():
     ).fetchone()
     conn.close()
 
-    # -------- TADY je hlavní změna: jasné hlášky při nesouladu --------
-    if row is None:
+    # schválně jedna hláška pro obě chyby (bezpečnější)
+    if row is None or not check_password_hash(row["password_hash"], password):
         flash("Špatné uživatelské jméno nebo heslo.", "error")
         return redirect(url_for("login"))
-
-    if not check_password_hash(row["password_hash"], password):
-        flash("Špatné uživatelské jméno nebo heslo.", "error")
-        return redirect(url_for("login"))
-    # -----------------------------------------------------------------
 
     session["user_id"] = row["id"]
     session["username"] = row["username"]
@@ -243,13 +236,6 @@ def dashboard():
     return render_template("dashboard.html", rides=rides, user=current_user())
 
 
-@app.route("/admin")
-def admin():
-    if not admin_required():
-        abort(403)
-    return render_template("admin.html", user=current_user())
-
-
 @app.route("/ride/add_demo")
 def add_demo_ride():
     if not login_required():
@@ -268,5 +254,104 @@ def add_demo_ride():
     return redirect(url_for("dashboard"))
 
 
+# ---------------------------------------------------------------------
+# ADMIN – zobrazení DB + mazání
+# ---------------------------------------------------------------------
+@app.route("/admin")
+def admin():
+    """
+    Admin dashboard:
+    - jen admin
+    - ukáže:
+      - seznam users
+      - seznam rides (včetně username)
+    """
+    if not admin_required():
+        abort(403)
+
+    conn = get_db_connection()
+
+    users_rows = conn.execute("""
+        SELECT id, username, role, created_at
+        FROM users
+        ORDER BY id ASC;
+    """).fetchall()
+
+    rides_rows = conn.execute("""
+        SELECT
+            rides.id,
+            rides.user_id,
+            users.username AS username,
+            rides.duration_sec,
+            rides.created_at
+        FROM rides
+        JOIN users ON users.id = rides.user_id
+        ORDER BY rides.created_at DESC;
+    """).fetchall()
+
+    conn.close()
+
+    users = [dict(r) for r in users_rows]
+    rides = [dict(r) for r in rides_rows]
+
+    return render_template(
+        "admin.html",
+        user=current_user(),
+        users=users,
+        rides=rides,
+    )
+
+
+@app.route("/admin/ride/<int:ride_id>/delete", methods=["POST"])
+def admin_delete_ride(ride_id: int):
+    """
+    Smaže konkrétní jízdu podle ID.
+    """
+    if not admin_required():
+        abort(403)
+
+    conn = get_db_connection()
+    cur = conn.execute("DELETE FROM rides WHERE id = ?", (ride_id,))
+    conn.commit()
+    conn.close()
+
+    if cur.rowcount == 0:
+        flash("Jízda nenalezena (nic se nesmazalo).", "error")
+    else:
+        flash(f"Jízda ID {ride_id} smazána.", "success")
+
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/user/<int:user_id>/delete", methods=["POST"])
+def admin_delete_user(user_id: int):
+    """
+    Smaže uživatele podle ID.
+    Díky ON DELETE CASCADE se smažou i jeho jízdy.
+    """
+    if not admin_required():
+        abort(403)
+
+    # ochrana: admin si nesmaže svůj vlastní účet omylem
+    if session.get("user_id") == user_id:
+        flash("Nemůžeš smazat sám sebe (přihlášený admin účet).", "error")
+        return redirect(url_for("admin"))
+
+    conn = get_db_connection()
+    cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    if cur.rowcount == 0:
+        flash("Uživatel nenalezen (nic se nesmazalo).", "error")
+    else:
+        flash(f"Uživatel ID {user_id} smazán (a jeho jízdy taky).", "success")
+
+    return redirect(url_for("admin"))
+
+
+# ---------------------------------------------------------------------
+# RUN
+# ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

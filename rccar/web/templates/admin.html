@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}RCcar – Admin{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h1>Admin panel</h1>
+    <p>
+      Tady admin vidí databázi (uživatelé + jízdy) a může mazat záznamy.
+    </p>
+
+    <h2 style="margin-top:16px;">Uživatelé</h2>
+
+    {% if users and users|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Vytvořeno</th>
+            <th>Akce</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+            <tr>
+              <td>{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.role }}</td>
+              <td>{{ u.created_at }}</td>
+              <td>
+                <!-- POST mazání usera -->
+                <form method="POST"
+                      action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                      style="display:inline;"
+                      onsubmit="return confirm('Opravdu smazat uživatele {{ u.username }} (ID {{ u.id }})? Smažou se i jeho jízdy!');">
+                  <button class="btn" type="submit">Smazat</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>Žádní uživatelé v databázi.</em></p>
+    {% endif %}
+
+    <h2 style="margin-top:20px;">Jízdy</h2>
+
+    {% if rides and rides|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID jízdy</th>
+            <th>User ID</th>
+            <th>Username</th>
+            <th>Délka (s)</th>
+            <th>Datum</th>
+            <th>Akce</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rides %}
+            <tr>
+              <td>{{ r.id }}</td>
+              <td>{{ r.user_id }}</td>
+              <td>{{ r.username }}</td>
+              <td>{{ r.duration_sec }}</td>
+              <td>{{ r.created_at }}</td>
+              <td>
+                <!-- POST mazání jízdy -->
+                <form method="POST"
+                      action="{{ url_for('admin_delete_ride', ride_id=r.id) }}"
+                      style="display:inline;"
+                      onsubmit="return confirm('Opravdu smazat jízdu ID {{ r.id }}?');">
+                  <button class="btn" type="submit">Smazat</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>Žádné jízdy v databázi.</em></p>
+    {% endif %}
+  </div>
+{% endblock %}

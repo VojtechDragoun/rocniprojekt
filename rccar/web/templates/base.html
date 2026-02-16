@@ -17,6 +17,10 @@
         <a href="{{ url_for('index') }}">Domů</a>
         <a href="{{ url_for('info') }}">Info</a>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
+
+        {% if user and user.role == 'admin' %}
+          <a href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
       </nav>
 
       <div class="nav-right">
@@ -38,7 +42,7 @@
     </div>
   </header>
 
-  <!-- FLASH ZPRÁVY (zobrazí se po redirectu / chybě / úspěchu) -->
+  <!-- FLASH ZPRÁVY -->
   <div class="container" style="padding-top: 12px; padding-bottom: 0;">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}

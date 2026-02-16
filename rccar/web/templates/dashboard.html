@@ -4,9 +4,28 @@
 
 {% block content %}
   <div class="card">
-    <h1>Dashboard – historie jízd</h1>
-    <p>Zde se zobrazují záznamy o jízdách uložené v databázi.</p>
+    <h1>Dashboard – ovládání + historie jízd</h1>
+    <p>
+      Ovládání: drž <b>W</b> pro jízdu (max), pusť pro stop.
+      Stisk <b>A</b> = vlevo 45°, <b>D</b> = vpravo 45°, tlačítko „Střed“ vrátí volant.
+    </p>
 
+    <!-- OVLÁDÁNÍ MYŠÍ -->
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin: 14px 0;">
+      <!-- Držet = jede, pustit = stop -->
+      <button id="btnForward" class="btn" type="button">🚗 Forward (drž)</button>
+
+      <!-- Jednorázové stisky -->
+      <button id="btnLeft" class="btn" type="button">⬅️ Left (45°)</button>
+      <button id="btnCenter" class="btn" type="button">🎯 Center</button>
+      <button id="btnRight" class="btn" type="button">➡️ Right (45°)</button>
+
+      <span id="status" style="margin-left:10px; color:#cbd5e1; align-self:center;"></span>
+    </div>
+
+    <hr style="opacity:0.25; margin: 16px 0;">
+
+    <!-- HISTORIE JÍZD -->
     {% if rides and rides|length > 0 %}
       <table>
         <thead>
@@ -28,9 +47,128 @@
       </table>
     {% else %}
       <p><em>Zatím nejsou v databázi žádné jízdy.</em></p>
-      <p>
-        Pro test můžeš použít: <a href="{{ url_for('add_demo_ride') }}">Přidat demo jízdu</a>
-      </p>
+      <p>Pro test: <a href="{{ url_for('add_demo_ride') }}">Přidat demo jízdu</a></p>
     {% endif %}
   </div>
+
+  <script>
+    /*
+      dashboard.js (inline)
+      ====================
+      - Posílá příkazy na Flask endpoint /api/control
+      - Ten je pak přepošle do ESP32 přes Serial
+
+      Příkazy, které budeme posílat (string):
+        "W:1"           -> pohon max ON
+        "W:0"           -> pohon STOP
+        "STEER:L"       -> volant vlevo 45°
+        "STEER:R"       -> volant vpravo 45°
+        "STEER:C"       -> volant střed
+    */
+
+    const statusEl = document.getElementById("status");
+
+    async function sendCmd(cmd) {
+      try {
+        const res = await fetch("/api/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmd })
+        });
+
+        // Pokud uživatel není přihlášen, backend vrátí 401
+        if (res.status === 401) {
+          statusEl.textContent = "❌ Nepřihlášen – nejdřív se přihlas.";
+          return;
+        }
+
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = "❌ Chyba: " + (data.error || res.status);
+          return;
+        }
+
+        statusEl.textContent = "✅ Odesláno: " + cmd;
+      } catch (e) {
+        statusEl.textContent = "❌ Network error: " + e;
+      }
+    }
+
+    // -------------------------
+    // OVLÁDÁNÍ MYŠÍ
+    // -------------------------
+    const btnForward = document.getElementById("btnForward");
+    const btnLeft = document.getElementById("btnLeft");
+    const btnCenter = document.getElementById("btnCenter");
+    const btnRight = document.getElementById("btnRight");
+
+    // Forward: držení myši = W:1, puštění = W:0
+    btnForward.addEventListener("mousedown", () => sendCmd("W:1"));
+    btnForward.addEventListener("mouseup", () => sendCmd("W:0"));
+    btnForward.addEventListener("mouseleave", () => sendCmd("W:0")); // když odjedeš myší pryč, stop
+    btnForward.addEventListener("touchstart", (e) => { e.preventDefault(); sendCmd("W:1"); }, { passive:false });
+    btnForward.addEventListener("touchend",   (e) => { e.preventDefault(); sendCmd("W:0"); }, { passive:false });
+
+    // Steer: klik = jednorázové nastavení
+    btnLeft.addEventListener("click", () => sendCmd("STEER:L"));
+    btnCenter.addEventListener("click", () => sendCmd("STEER:C"));
+    btnRight.addEventListener("click", () => sendCmd("STEER:R"));
+
+    // -------------------------
+    // OVLÁDÁNÍ KLÁVESNICÍ
+    // -------------------------
+    // Chceme:
+    // - W: při stisku W -> W:1, při uvolnění -> W:0
+    // - A/D: jednorázové (na jeden stisk), ne spam při držení
+    const held = {
+      w: false,
+      a: false,
+      d: false,
+    };
+
+    window.addEventListener("keydown", (e) => {
+      // ať nám to nescrolluje stránku u některých kláves
+      if (["w","a","d"," "].includes(e.key.toLowerCase())) e.preventDefault();
+
+      const k = e.key.toLowerCase();
+
+      if (k === "w") {
+        if (!held.w) {
+          held.w = true;
+          sendCmd("W:1");
+        }
+      }
+
+      // A/D chceme jen jednou (ne opakování při držení)
+      if (k === "a") {
+        if (!held.a) {
+          held.a = true;
+          sendCmd("STEER:L");
+        }
+      }
+
+      if (k === "d") {
+        if (!held.d) {
+          held.d = true;
+          sendCmd("STEER:R");
+        }
+      }
+
+      // mezerník jako “střed” (hodí se)
+      if (k === " ") {
+        sendCmd("STEER:C");
+      }
+    }, { passive:false });
+
+    window.addEventListener("keyup", (e) => {
+      const k = e.key.toLowerCase();
+
+      if (k === "w") {
+        held.w = false;
+        sendCmd("W:0");
+      }
+      if (k === "a") held.a = false;
+      if (k === "d") held.d = false;
+    });
+  </script>
 {% endblock %}
