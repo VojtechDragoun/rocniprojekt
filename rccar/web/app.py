@@ -1,17 +1,23 @@
 """
-app.py – Flask backend pro projekt RCcar
-======================================
+app.py – Flask backend pro RCcar (Vojtěch)
+=========================================
 
-Navíc oproti základní verzi:
-- /admin stránka (jen pro admina)
-- admin vidí tabulky users + rides
-- admin může mazat:
-  - jízdy (DELETE ride)
-  - uživatele (DELETE user) -> smaže i jeho jízdy díky ON DELETE CASCADE
+Umí:
+- Stránky: index, info, register, login, dashboard, admin
+- Autentizace: session (login/logout)
+- DB: users + rides (admin vidí vše, user jen svoje)
+- API: /api/control (jen pro přihlášené) -> pošle příkaz do Arduino (servo)
 
-Bezpečnost:
-- Mazání děláme přes POST (ne přes GET).
-- Route /admin* je chráněná admin_required().
+Struktura projektu:
+rccar/
+  database/
+    rccar.db
+    schema.sql
+  web/
+    app.py
+    arduino_comm.py
+    templates/
+    static/
 """
 
 from __future__ import annotations
@@ -29,29 +35,41 @@ from flask import (
     session,
     flash,
     abort,
+    jsonify,
 )
+
 from werkzeug.security import generate_password_hash, check_password_hash
 
-
-# ---------------------------------------------------------------------
-# CESTY
-# ---------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent          # web/
-PROJECT_ROOT = BASE_DIR.parent                      # rccar/
-DB_PATH = PROJECT_ROOT / "database" / "rccar.db"    # rccar/database/rccar.db
+# Serial bridge (pyserial) – musí existovat soubor web/arduino_comm.py
+import arduino_comm
 
 
 # ---------------------------------------------------------------------
-# FLASK APP
+# 1) CESTY
+# ---------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent          # .../rccar/web
+PROJECT_ROOT = BASE_DIR.parent                      # .../rccar
+DB_PATH = PROJECT_ROOT / "database" / "rccar.db"
+SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
+
+
+# ---------------------------------------------------------------------
+# 2) FLASK APP
 # ---------------------------------------------------------------------
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+# Pro session cookie (podepisování) – v reálu do env, tady natvrdo OK
 app.config["SECRET_KEY"] = "CHANGE_ME_TO_SOMETHING_RANDOM_AND_SECRET"
 
 
 # ---------------------------------------------------------------------
-# DB
+# 3) DB HELPERY
 # ---------------------------------------------------------------------
 def get_db_connection() -> sqlite3.Connection:
+    """
+    Otevře SQLite spojení.
+    DŮLEŽITÉ: SQLite má foreign keys defaultně vypnuté -> zapneme PRAGMA.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -60,40 +78,29 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     """
-    Vytvoří tabulky, pokud neexistují (safe).
-    Pokud už tabulky máš, nic to nepřepíše.
+    Vytvoří tabulky ze schema.sql (pokud neexistují).
+    schema.sql je zdroj pravdy.
     """
+    if not SCHEMA_PATH.exists():
+        raise FileNotFoundError(f"Chybí schema.sql: {SCHEMA_PATH}")
+
+    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+
     conn = get_db_connection()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            username      TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            role          TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
-            created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS rides (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id      INTEGER NOT NULL,
-            duration_sec INTEGER NOT NULL CHECK(duration_sec >= 0),
-            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_rides_user_id ON rides(user_id);
-    """)
+    conn.executescript(schema_sql)
     conn.commit()
     conn.close()
 
 
+# vytvoří tabulky při startu serveru
 init_db()
 
 
 # ---------------------------------------------------------------------
-# AUTH HELPERY
+# 4) AUTH HELPERY
 # ---------------------------------------------------------------------
 def current_user() -> Optional[Dict[str, Any]]:
+    """Vrátí dict o přihlášeném uživateli nebo None."""
     if "user_id" not in session:
         return None
     return {
@@ -112,7 +119,7 @@ def admin_required() -> bool:
 
 
 # ---------------------------------------------------------------------
-# ROUTES – veřejné stránky
+# 5) ROUTES – PAGES
 # ---------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -155,7 +162,7 @@ def register():
         flash("Uživatel s tímto jménem už existuje.", "error")
         return redirect(url_for("register"))
 
-    flash("Registrace proběhla úspěšně. Teď se přihlas.", "success")
+    flash("Registrace OK. Teď se přihlas.", "success")
     return redirect(url_for("login"))
 
 
@@ -178,7 +185,7 @@ def login():
     ).fetchone()
     conn.close()
 
-    # schválně jedna hláška pro obě chyby (bezpečnější)
+    # jedna společná hláška (bezpečnější)
     if row is None or not check_password_hash(row["password_hash"], password):
         flash("Špatné uživatelské jméno nebo heslo.", "error")
         return redirect(url_for("login"))
@@ -255,58 +262,33 @@ def add_demo_ride():
 
 
 # ---------------------------------------------------------------------
-# ADMIN – zobrazení DB + mazání
+# 6) ADMIN (volitelné)
 # ---------------------------------------------------------------------
 @app.route("/admin")
 def admin():
-    """
-    Admin dashboard:
-    - jen admin
-    - ukáže:
-      - seznam users
-      - seznam rides (včetně username)
-    """
     if not admin_required():
         abort(403)
 
     conn = get_db_connection()
-
-    users_rows = conn.execute("""
-        SELECT id, username, role, created_at
-        FROM users
-        ORDER BY id ASC;
-    """).fetchall()
-
+    users_rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id;").fetchall()
     rides_rows = conn.execute("""
-        SELECT
-            rides.id,
-            rides.user_id,
-            users.username AS username,
-            rides.duration_sec,
-            rides.created_at
+        SELECT rides.id, rides.user_id, users.username AS username, rides.duration_sec, rides.created_at
         FROM rides
         JOIN users ON users.id = rides.user_id
         ORDER BY rides.created_at DESC;
     """).fetchall()
-
     conn.close()
-
-    users = [dict(r) for r in users_rows]
-    rides = [dict(r) for r in rides_rows]
 
     return render_template(
         "admin.html",
         user=current_user(),
-        users=users,
-        rides=rides,
+        users=[dict(u) for u in users_rows],
+        rides=[dict(r) for r in rides_rows],
     )
 
 
 @app.route("/admin/ride/<int:ride_id>/delete", methods=["POST"])
 def admin_delete_ride(ride_id: int):
-    """
-    Smaže konkrétní jízdu podle ID.
-    """
     if not admin_required():
         abort(403)
 
@@ -315,26 +297,18 @@ def admin_delete_ride(ride_id: int):
     conn.commit()
     conn.close()
 
-    if cur.rowcount == 0:
-        flash("Jízda nenalezena (nic se nesmazalo).", "error")
-    else:
-        flash(f"Jízda ID {ride_id} smazána.", "success")
-
+    flash("Jízda smazána." if cur.rowcount else "Jízda nenalezena.", "success" if cur.rowcount else "error")
     return redirect(url_for("admin"))
 
 
 @app.route("/admin/user/<int:user_id>/delete", methods=["POST"])
 def admin_delete_user(user_id: int):
-    """
-    Smaže uživatele podle ID.
-    Díky ON DELETE CASCADE se smažou i jeho jízdy.
-    """
     if not admin_required():
         abort(403)
 
-    # ochrana: admin si nesmaže svůj vlastní účet omylem
+    # zabrání adminovi smazat sám sebe
     if session.get("user_id") == user_id:
-        flash("Nemůžeš smazat sám sebe (přihlášený admin účet).", "error")
+        flash("Nemůžeš smazat sám sebe.", "error")
         return redirect(url_for("admin"))
 
     conn = get_db_connection()
@@ -342,12 +316,38 @@ def admin_delete_user(user_id: int):
     conn.commit()
     conn.close()
 
-    if cur.rowcount == 0:
-        flash("Uživatel nenalezen (nic se nesmazalo).", "error")
-    else:
-        flash(f"Uživatel ID {user_id} smazán (a jeho jízdy taky).", "success")
-
+    flash("Uživatel smazán." if cur.rowcount else "Uživatel nenalezen.", "success" if cur.rowcount else "error")
     return redirect(url_for("admin"))
+
+
+# ---------------------------------------------------------------------
+# 7) API – OVLÁDÁNÍ SERVA (A/D drž, pust = střed)
+# ---------------------------------------------------------------------
+@app.route("/api/control", methods=["POST"])
+def api_control():
+    """
+    Přijme { "cmd": "STEER:L" } a pošle to přes serial do Arduino.
+
+    Bezpečnost:
+    - jen přihlášený
+    - povolíme jen konkrétní příkazy
+    """
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in"}), 401
+
+    data = request.get_json(silent=True) or {}
+    cmd = (data.get("cmd") or "").strip()
+
+    allowed = {"STEER:L", "STEER:R", "STEER:C"}
+    if cmd not in allowed:
+        return jsonify({"error": "Command not allowed"}), 400
+
+    try:
+        arduino_comm.send_line(cmd)
+    except Exception as e:
+        return jsonify({"error": f"Arduino send failed: {e}"}), 500
+
+    return jsonify({"ok": True, "sent": cmd})
 
 
 # ---------------------------------------------------------------------
