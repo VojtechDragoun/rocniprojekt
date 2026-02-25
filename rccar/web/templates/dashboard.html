@@ -4,17 +4,42 @@
 
 {% block content %}
   <div class="card">
-    <h1>Dashboard – řízení servem + historie jízd</h1>
+    <h1>Dashboard – ovládání serva + historie jízd</h1>
 
     <p>
       Drž <b>A</b> = vlevo 45°, drž <b>D</b> = vpravo 45°.
-      Po puštění se servo automaticky vrátí do středu.
+      Po puštění se servo vrátí do středu.
     </p>
 
-    <!-- OVLÁDÁNÍ -->
+    <!-- VÝBĚR AUTA (M:N users ↔ cars) -->
+    {% if cars and cars|length > 0 %}
+      <div style="margin: 10px 0 14px 0;">
+        <label for="carSelect" style="display:block; margin-bottom:6px;">
+          Vyber auto:
+        </label>
+
+        <select id="carSelect" style="padding:10px 12px; border-radius:12px;">
+          {% for c in cars %}
+            <option value="{{ c.id }}" {% if c.id == active_car_id %}selected{% endif %}>
+              {{ c.name }}
+            </option>
+          {% endfor %}
+        </select>
+
+        <span id="carStatus" style="margin-left:10px; color:#cbd5e1;"></span>
+      </div>
+    {% else %}
+      <p style="color:#fca5a5;">
+        <b>Nemáš přiřazené žádné auto.</b>
+        Přihlas se jako admin a přiřaď auto uživateli (tabulka user_cars).
+      </p>
+    {% endif %}
+
+    <!-- OVLÁDÁNÍ MYŠÍ -->
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin: 14px 0;">
       <button id="btnLeft" class="btn" type="button">⬅️ Left (drž)</button>
       <button id="btnRight" class="btn" type="button">➡️ Right (drž)</button>
+
       <span id="status" style="margin-left:10px; color:#cbd5e1; align-self:center;"></span>
     </div>
 
@@ -26,6 +51,7 @@
         <thead>
           <tr>
             <th>Uživatel</th>
+            <th>Auto</th>
             <th>Délka jízdy (s)</th>
             <th>Datum</th>
           </tr>
@@ -34,6 +60,7 @@
           {% for r in rides %}
             <tr>
               <td>{{ r.username }}</td>
+              <td>{{ r.car_name }}</td>
               <td>{{ r.duration_sec }}</td>
               <td>{{ r.created_at }}</td>
             </tr>
@@ -47,8 +74,19 @@
   </div>
 
   <script>
-    // --- jednoduchý status řádek ---
+    /*
+      dashboard.js (inline)
+      - posílá příkazy na /api/control (Flask)
+      - Flask to pošle přes Serial do Arduino
+      - navíc vybíráš aktivní auto přes /api/select_car (uloží se do session)
+
+      Příkazy:
+        STEER:L / STEER:R / STEER:C
+    */
+
     const statusEl = document.getElementById("status");
+    const carSelect = document.getElementById("carSelect");
+    const carStatus = document.getElementById("carStatus");
 
     async function sendCmd(cmd) {
       try {
@@ -75,7 +113,34 @@
       }
     }
 
-    // ---------- Myš (drž = zatoč, pust = střed) ----------
+    async function selectCar(car_id) {
+      if (!carStatus) return;
+      try {
+        const res = await fetch("/api/select_car", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ car_id })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          carStatus.textContent = "❌ " + (data.error || res.status);
+          return;
+        }
+
+        carStatus.textContent = "✅ Aktivní auto nastaveno";
+      } catch (e) {
+        carStatus.textContent = "❌ Network error: " + e;
+      }
+    }
+
+    if (carSelect) {
+      carSelect.addEventListener("change", () => selectCar(carSelect.value));
+    }
+
+    // -------------------------
+    // OVLÁDÁNÍ MYŠÍ (drž = zatoč, pust = střed)
+    // -------------------------
     const btnLeft = document.getElementById("btnLeft");
     const btnRight = document.getElementById("btnRight");
 
@@ -87,8 +152,10 @@
     btnRight.addEventListener("mouseup", () => sendCmd("STEER:C"));
     btnRight.addEventListener("mouseleave", () => sendCmd("STEER:C"));
 
-    // ---------- Klávesnice (A/D držení) ----------
-    const held = { a: false, d: false };
+    // -------------------------
+    // OVLÁDÁNÍ KLÁVESNICÍ (A/D držení + auto-center)
+    // -------------------------
+    const held = { a:false, d:false };
 
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
@@ -119,7 +186,7 @@
       }
     });
 
-    // pojistka: při ztrátě focusu vrátit střed
+    // pojistka: Alt+Tab / ztráta focusu => vrať střed
     window.addEventListener("blur", () => {
       held.a = held.d = false;
       sendCmd("STEER:C");
