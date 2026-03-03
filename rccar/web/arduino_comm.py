@@ -1,142 +1,79 @@
 """
-arduino_comm.py – Serial bridge pro Arduino UNO (auto-detekce COM portu)
-=======================================================================
+arduino_comm.py – jednoduchý bridge pro Serial komunikaci s Arduinem
+===============================================================
 
-Co to řeší:
-- Nemusíš ručně přepisovat COM5/COM7.
-- Kód si při prvním použití najde port, kde je Arduino připojené.
+- Automaticky se pokusí najít Arduino COM port
+- Otevře Serial na 115200
+- Funkce send_line("L") pošle "L\n"
 
-Jak hledáme:
-- Projdeme všechny COM porty (serial.tools.list_ports.comports()).
-- Preferujeme porty podle "description" / "manufacturer":
-  - Arduino
-  - CH340 (častý klon)
-  - CP210
-  - USB-SERIAL / USB Serial
-
-Poznámka:
-- Po otevření portu se UNO často resetuje -> sleep(1.5)
+Poznámky:
+- Když je otevřený Arduino Serial Monitor, port může být obsazený.
+- Po otevření portu se Arduino často resetne -> čekáme 2 s.
 """
 
 from __future__ import annotations
 
 import time
-import threading
 from typing import Optional
 
 import serial
-from serial.tools import list_ports
+import serial.tools.list_ports
 
-
-BAUDRATE = 115200
-WRITE_TIMEOUT = 0.2
-
-_lock = threading.Lock()
+BAUD = 115200
 _ser: Optional[serial.Serial] = None
-_cached_port: Optional[str] = None
 
 
-def _pick_port() -> str:
-    """
-    Vybere nejlepší COM port pro Arduino.
-
-    1) Projde dostupné porty a hledá podle klíčových slov.
-    2) Pokud nic nenajde, zkusí vzít první port (když existuje).
-    3) Pokud není žádný port, vyhodí error.
-    """
-    ports = list(list_ports.comports())
+def _auto_find_port() -> str:
+    ports = list(serial.tools.list_ports.comports())
     if not ports:
-        raise RuntimeError("Nenalezen žádný COM port. Je Arduino připojené přes USB?")
+        raise RuntimeError("Nenalezen žádný COM port (Arduino není připojené?).")
 
-    # Klíčová slova, která se na Windows často objevují u Arduino/USB převodníků
-    keywords = [
-        "arduino",
-        "ch340",
-        "cp210",
-        "cp210x",
-        "usb-serial",
-        "usb serial",
-        "silicon labs",
-        "wch",
-    ]
-
-    # Seřadíme kandidáty: nejdřív ty, které matchují keywordy
-    scored = []
+    # Preferujeme zařízení, která typicky odpovídají Arduinu/USB převodníkům
+    preferred = []
     for p in ports:
         desc = (p.description or "").lower()
-        manuf = (p.manufacturer or "").lower()
         hwid = (p.hwid or "").lower()
-        text = f"{desc} {manuf} {hwid}"
+        if any(x in desc for x in ["arduino", "ch340", "usb serial", "cp210", "ftdi"]) or any(
+            x in hwid for x in ["ch340", "cp210", "ftdi"]
+        ):
+            preferred.append(p.device)
 
-        score = 0
-        for kw in keywords:
-            if kw in text:
-                score += 10
+    if preferred:
+        return preferred[0]
 
-        # Bonus: často Arduino UNO hlásí "Arduino Uno" nebo podobně
-        if "arduino" in text:
-            score += 20
-
-        scored.append((score, p.device, p.description, p.manufacturer))
-
-    scored.sort(reverse=True, key=lambda x: x[0])
-
-    best_score, best_dev, best_desc, best_manuf = scored[0]
-    if best_score > 0:
-        # Našli jsme něco, co vypadá jako Arduino
-        return best_dev
-
-    # Nic "Arduino-like" jsme nenašli -> vezmeme první port
+    # fallback: první port
     return ports[0].device
 
 
-def _connect() -> serial.Serial:
-    """
-    Otevře serial spojení (pokud už není otevřené).
-    Port vybere automaticky.
-    """
-    global _ser, _cached_port
+def _get_serial() -> serial.Serial:
+    global _ser
 
-    if _ser and _ser.is_open:
+    if _ser is not None and _ser.is_open:
         return _ser
 
-    # Pokud už jsme port jednou našli, použijeme ho z cache
-    port = _cached_port or _pick_port()
+    port = _auto_find_port()
 
-    s = serial.Serial(
-        port=port,
-        baudrate=BAUDRATE,
-        timeout=0.1,
-        write_timeout=WRITE_TIMEOUT,
-    )
+    # timeout krátký – ať to neblokuje Flask requesty dlouho
+    _ser = serial.Serial(port, BAUD, timeout=0.2, write_timeout=0.2)
 
-    # UNO reset při otevření portu
-    time.sleep(1.5)
+    # Arduino se po otevření portu často resetne
+    time.sleep(2.0)
 
-    _ser = s
-    _cached_port = port
-    return s
+    try:
+        _ser.reset_input_buffer()
+        _ser.reset_output_buffer()
+    except Exception:
+        pass
+
+    return _ser
 
 
-def send_line(cmd: str) -> None:
+def send_line(line: str) -> None:
     """
-    Pošle jeden příkaz do Arduino jako řádek.
-    Např: "STEER:L"
+    Pošle jednu "řádku" do Arduina.
+    I když posíláme jen 'L', přidáváme \n – je to standardní a kompatibilní.
     """
-    line = (cmd.strip() + "\n").encode("utf-8")
-
-    with _lock:
-        s = _connect()
-        s.write(line)
-        s.flush()
-
-
-def debug_list_ports() -> list[str]:
-    """
-    Pomocná funkce – kdybys chtěl vypsat porty a zjistit, co Windows ukazuje.
-    Nevolá se automaticky, jen pro debug.
-    """
-    out = []
-    for p in list_ports.comports():
-        out.append(f"{p.device} | {p.description} | {p.manufacturer} | {p.hwid}")
-    return out
+    ser = _get_serial()
+    msg = (line.strip() + "\n").encode("ascii", errors="ignore")
+    ser.write(msg)
+    ser.flush()

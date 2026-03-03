@@ -3,6 +3,9 @@ pip instal ....
 
 py -m pip install pyserial     | Instalace knihovny
 
+kód z car.ino se musí zkopírovat a poslat např přes arduino ide do arduina před spuštěním stránky
+musí se vybrat COM port , do kterého je připojené arduino přes usb a pak to do arduina nahrát
+Arduino a servo k němu se musí zapojit podle schématu, které je ve složce docs ve složce v projektu
 Stránka se spoští přes soubor app.py, který je ve složce web, která je ve složce projektu rccar.
 Po spuštění app.py se vygeneruje odkaz na stránku.
 V navbaru je jsou odkazy na další stránky, domů - domovská stránka; dashboard - ovládání auta (motorů) ; info - informace o projektu, admin pro admina.
@@ -28,7 +31,7 @@ Standardní knihovny Pythonu
 
 Flask - je potřeba stáhnout
 - Werkzeug 
-- Jinja2 
+- Jinja2 chci dát pryč
 - ItsDangerous
 - Click 
 - Blinker
