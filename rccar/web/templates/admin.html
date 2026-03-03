@@ -4,13 +4,17 @@
 
 {% block content %}
   <div class="card">
-    <h1>Admin panel</h1>
-    <p>
-      Tady admin vidí databázi (uživatelé + jízdy) a může mazat záznamy.
-    </p>
+    <h1>Admin – správa databáze</h1>
 
-    <h2 style="margin-top:16px;">Uživatelé</h2>
+    {% if not arduino_available %}
+      <p style="color:#fca5a5;">
+        Arduino není dostupné: {{ arduino_error }}
+      </p>
+    {% endif %}
 
+    <hr style="opacity:0.25; margin: 16px 0;">
+
+    <h2>Uživatelé</h2>
     {% if users and users|length > 0 %}
       <table>
         <thead>
@@ -30,11 +34,8 @@
               <td>{{ u.role }}</td>
               <td>{{ u.created_at }}</td>
               <td>
-                <!-- POST mazání usera -->
-                <form method="POST"
-                      action="{{ url_for('admin_delete_user', user_id=u.id) }}"
-                      style="display:inline;"
-                      onsubmit="return confirm('Opravdu smazat uživatele {{ u.username }} (ID {{ u.id }})? Smažou se i jeho jízdy!');">
+                <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                      onsubmit="return confirm('Smazat uživatele {{ u.username }}? (smažou se i jeho jízdy)');">
                   <button class="btn" type="submit">Smazat</button>
                 </form>
               </td>
@@ -43,20 +44,58 @@
         </tbody>
       </table>
     {% else %}
-      <p><em>Žádní uživatelé v databázi.</em></p>
+      <p><em>Žádní uživatelé.</em></p>
     {% endif %}
 
-    <h2 style="margin-top:20px;">Jízdy</h2>
+    <hr style="opacity:0.25; margin: 16px 0;">
 
+    <h2>Auta</h2>
+    {% if cars and cars|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Název</th>
+            <th>Power limit %</th>
+            <th>Steer °</th>
+            <th>Vytvořeno</th>
+            <th>Akce</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cars %}
+            <tr>
+              <td>{{ c.id }}</td>
+              <td>{{ c.name }}</td>
+              <td>{{ c.power_limit_percent }}</td>
+              <td>{{ c.steer_angle_deg }}</td>
+              <td>{{ c.created_at }}</td>
+              <td>
+                <form method="POST" action="{{ url_for('admin_delete_car', car_id=c.id) }}"
+                      onsubmit="return confirm('Smazat auto {{ c.name }}? (smažou se i navázané jízdy)');">
+                  <button class="btn" type="submit">Smazat</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p><em>Žádná auta.</em></p>
+    {% endif %}
+
+    <hr style="opacity:0.25; margin: 16px 0;">
+
+    <h2>Jízdy</h2>
     {% if rides and rides|length > 0 %}
       <table>
         <thead>
           <tr>
-            <th>ID jízdy</th>
-            <th>User ID</th>
-            <th>Username</th>
+            <th>ID</th>
+            <th>Uživatel</th>
+            <th>Auto</th>
+            <th>Start</th>
             <th>Délka (s)</th>
-            <th>Datum</th>
             <th>Akce</th>
           </tr>
         </thead>
@@ -64,16 +103,13 @@
           {% for r in rides %}
             <tr>
               <td>{{ r.id }}</td>
-              <td>{{ r.user_id }}</td>
               <td>{{ r.username }}</td>
-              <td>{{ r.duration_sec }}</td>
-              <td>{{ r.created_at }}</td>
+              <td>{{ r.car_name }}</td>
+              <td>{{ r.started_at }}</td>
+              <td>{% if r.duration_sec is none %}<em>Nedokončeno</em>{% else %}{{ r.duration_sec }}{% endif %}</td>
               <td>
-                <!-- POST mazání jízdy -->
-                <form method="POST"
-                      action="{{ url_for('admin_delete_ride', ride_id=r.id) }}"
-                      style="display:inline;"
-                      onsubmit="return confirm('Opravdu smazat jízdu ID {{ r.id }}?');">
+                <form method="POST" action="{{ url_for('admin_delete_ride', ride_id=r.id) }}"
+                      onsubmit="return confirm('Smazat jízdu ID={{ r.id }}?');">
                   <button class="btn" type="submit">Smazat</button>
                 </form>
               </td>
@@ -82,7 +118,7 @@
         </tbody>
       </table>
     {% else %}
-      <p><em>Žádné jízdy v databázi.</em></p>
+      <p><em>Žádné jízdy.</em></p>
     {% endif %}
   </div>
 {% endblock %}

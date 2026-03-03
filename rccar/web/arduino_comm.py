@@ -1,13 +1,13 @@
 """
-arduino_comm.py – jednoduchý bridge pro Serial komunikaci s Arduinem
-===============================================================
+arduino_comm.py – Serial bridge pro Arduino (Vojtěch)
+====================================================
 
-- Automaticky se pokusí najít Arduino COM port
+- Automaticky se pokusí najít COM port s Arduinem
 - Otevře Serial na 115200
-- Funkce send_line("L") pošle "L\n"
+- send_line("STEER:L") pošle "STEER:L\n"
 
 Poznámky:
-- Když je otevřený Arduino Serial Monitor, port může být obsazený.
+- Pokud je otevřený Arduino Serial Monitor, port může být obsazený.
 - Po otevření portu se Arduino často resetne -> čekáme 2 s.
 """
 
@@ -28,7 +28,6 @@ def _auto_find_port() -> str:
     if not ports:
         raise RuntimeError("Nenalezen žádný COM port (Arduino není připojené?).")
 
-    # Preferujeme zařízení, která typicky odpovídají Arduinu/USB převodníkům
     preferred = []
     for p in ports:
         desc = (p.description or "").lower()
@@ -41,7 +40,6 @@ def _auto_find_port() -> str:
     if preferred:
         return preferred[0]
 
-    # fallback: první port
     return ports[0].device
 
 
@@ -52,11 +50,8 @@ def _get_serial() -> serial.Serial:
         return _ser
 
     port = _auto_find_port()
-
-    # timeout krátký – ať to neblokuje Flask requesty dlouho
     _ser = serial.Serial(port, BAUD, timeout=0.2, write_timeout=0.2)
 
-    # Arduino se po otevření portu často resetne
     time.sleep(2.0)
 
     try:
@@ -69,10 +64,6 @@ def _get_serial() -> serial.Serial:
 
 
 def send_line(line: str) -> None:
-    """
-    Pošle jednu "řádku" do Arduina.
-    I když posíláme jen 'L', přidáváme \n – je to standardní a kompatibilní.
-    """
     ser = _get_serial()
     msg = (line.strip() + "\n").encode("ascii", errors="ignore")
     ser.write(msg)

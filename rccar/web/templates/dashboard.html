@@ -4,14 +4,22 @@
 
 {% block content %}
   <div class="card">
-    <h1>Dashboard – ovládání serva + historie jízd</h1>
+    <h1>Dashboard – ovládání serva + jízdy</h1>
+
+    {% if not arduino_available %}
+      <p style="color:#fca5a5;">
+        <b>Arduino komunikace není dostupná:</b> {{ arduino_error }}
+        <br>Web poběží, ale ovládání serva nebude fungovat.
+      </p>
+      <hr style="opacity:0.25; margin: 16px 0;">
+    {% endif %}
 
     <p>
       Drž <b>A</b> = vlevo 45°, drž <b>D</b> = vpravo 45°.
       Po puštění se servo vrátí do středu.
     </p>
 
-    <!-- VÝBĚR AUTA (M:N users ↔ cars) -->
+    <!-- VÝBĚR AUTA -->
     {% if cars and cars|length > 0 %}
       <div style="margin: 10px 0 14px 0;">
         <label for="carSelect" style="display:block; margin-bottom:6px;">
@@ -21,7 +29,7 @@
         <select id="carSelect" style="padding:10px 12px; border-radius:12px;">
           {% for c in cars %}
             <option value="{{ c.id }}" {% if c.id == active_car_id %}selected{% endif %}>
-              {{ c.name }}
+              {{ c.name }} (power {{ c.power_limit_percent }}%, steer {{ c.steer_angle_deg }}°)
             </option>
           {% endfor %}
         </select>
@@ -29,10 +37,7 @@
         <span id="carStatus" style="margin-left:10px; color:#cbd5e1;"></span>
       </div>
     {% else %}
-      <p style="color:#fca5a5;">
-        <b>Nemáš přiřazené žádné auto.</b>
-        Přihlas se jako admin a přiřaď auto uživateli (tabulka user_cars).
-      </p>
+      <p style="color:#fca5a5;"><b>V DB nejsou žádná auta.</b> Přidej je přes init_db.py nebo admin.</p>
     {% endif %}
 
     <!-- OVLÁDÁNÍ MYŠÍ -->
@@ -41,6 +46,13 @@
       <button id="btnRight" class="btn" type="button">➡️ Right (drž)</button>
 
       <span id="status" style="margin-left:10px; color:#cbd5e1; align-self:center;"></span>
+    </div>
+
+    <!-- START/STOP JÍZDY -->
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin: 10px 0 6px 0;">
+      <button id="btnStartRide" class="btn" type="button">▶️ Start</button>
+      <button id="btnStopRide" class="btn" type="button">⏹️ Stop</button>
+      <span id="rideStatus" style="margin-left:10px; color:#cbd5e1; align-self:center;"></span>
     </div>
 
     <hr style="opacity:0.25; margin: 16px 0;">
@@ -52,8 +64,8 @@
           <tr>
             <th>Uživatel</th>
             <th>Auto</th>
-            <th>Délka jízdy (s)</th>
-            <th>Datum</th>
+            <th>Start</th>
+            <th>Délka (s)</th>
           </tr>
         </thead>
         <tbody>
@@ -61,30 +73,26 @@
             <tr>
               <td>{{ r.username }}</td>
               <td>{{ r.car_name }}</td>
-              <td>{{ r.duration_sec }}</td>
-              <td>{{ r.created_at }}</td>
+              <td>{{ r.started_at }}</td>
+              <td>
+                {% if r.duration_sec is none %}
+                  <em>Nedokončeno</em>
+                {% else %}
+                  {{ r.duration_sec }}
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
       <p><em>Zatím nejsou v databázi žádné jízdy.</em></p>
-      <p>Pro test: <a href="{{ url_for('add_demo_ride') }}">Přidat demo jízdu</a></p>
     {% endif %}
   </div>
 
   <script>
-    /*
-      dashboard.js (inline)
-      - posílá příkazy na /api/control (Flask)
-      - Flask to pošle přes Serial do Arduino
-      - navíc vybíráš aktivní auto přes /api/select_car (uloží se do session)
-
-      Příkazy:
-        STEER:L / STEER:R / STEER:C
-    */
-
     const statusEl = document.getElementById("status");
+    const rideStatusEl = document.getElementById("rideStatus");
     const carSelect = document.getElementById("carSelect");
     const carStatus = document.getElementById("carStatus");
 
@@ -96,12 +104,13 @@
           body: JSON.stringify({ cmd })
         });
 
+        const data = await res.json().catch(() => ({}));
+
         if (res.status === 401) {
           statusEl.textContent = "❌ Nepřihlášen – nejdřív se přihlas.";
           return;
         }
 
-        const data = await res.json();
         if (!res.ok) {
           statusEl.textContent = "❌ Chyba: " + (data.error || res.status);
           return;
@@ -122,7 +131,7 @@
           body: JSON.stringify({ car_id })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           carStatus.textContent = "❌ " + (data.error || res.status);
           return;
@@ -138,9 +147,7 @@
       carSelect.addEventListener("change", () => selectCar(carSelect.value));
     }
 
-    // -------------------------
-    // OVLÁDÁNÍ MYŠÍ (drž = zatoč, pust = střed)
-    // -------------------------
+    // ---- myš: drž = zatoč, pust = střed ----
     const btnLeft = document.getElementById("btnLeft");
     const btnRight = document.getElementById("btnRight");
 
@@ -152,44 +159,73 @@
     btnRight.addEventListener("mouseup", () => sendCmd("STEER:C"));
     btnRight.addEventListener("mouseleave", () => sendCmd("STEER:C"));
 
-    // -------------------------
-    // OVLÁDÁNÍ KLÁVESNICÍ (A/D držení + auto-center)
-    // -------------------------
+    // ---- klávesnice: A/D držení + auto-center ----
     const held = { a:false, d:false };
 
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
       if (k === "a" || k === "d") e.preventDefault();
 
-      if (k === "a" && !held.a) {
-        held.a = true;
-        sendCmd("STEER:L");
-      }
-
-      if (k === "d" && !held.d) {
-        held.d = true;
-        sendCmd("STEER:R");
-      }
+      if (k === "a" && !held.a) { held.a = true; sendCmd("STEER:L"); }
+      if (k === "d" && !held.d) { held.d = true; sendCmd("STEER:R"); }
     }, { passive:false });
 
     window.addEventListener("keyup", (e) => {
       const k = e.key.toLowerCase();
-
-      if (k === "a") {
-        held.a = false;
-        sendCmd("STEER:C");
-      }
-
-      if (k === "d") {
-        held.d = false;
-        sendCmd("STEER:C");
-      }
+      if (k === "a") { held.a = false; sendCmd("STEER:C"); }
+      if (k === "d") { held.d = false; sendCmd("STEER:C"); }
     });
 
-    // pojistka: Alt+Tab / ztráta focusu => vrať střed
     window.addEventListener("blur", () => {
       held.a = held.d = false;
       sendCmd("STEER:C");
     });
+
+    // ---- Start/Stop jízdy ----
+    const btnStartRide = document.getElementById("btnStartRide");
+    const btnStopRide = document.getElementById("btnStopRide");
+
+    async function rideStart() {
+      try {
+        const res = await fetch("/api/ride/start", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
+          rideStatusEl.textContent = "❌ Nepřihlášen.";
+          return;
+        }
+        if (!res.ok) {
+          rideStatusEl.textContent = "❌ " + (data.error || res.status);
+          return;
+        }
+
+        rideStatusEl.textContent = "✅ Jízda spuštěna (ride_id=" + data.ride_id + ")";
+      } catch (e) {
+        rideStatusEl.textContent = "❌ Network error: " + e;
+      }
+    }
+
+    async function rideStop() {
+      try {
+        const res = await fetch("/api/ride/stop", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
+          rideStatusEl.textContent = "❌ Nepřihlášen.";
+          return;
+        }
+        if (!res.ok) {
+          rideStatusEl.textContent = "❌ " + (data.error || res.status);
+          return;
+        }
+
+        rideStatusEl.textContent = "✅ Jízda ukončena (" + data.duration_sec + " s). Obnov stránku pro aktualizaci tabulky.";
+      } catch (e) {
+        rideStatusEl.textContent = "❌ Network error: " + e;
+      }
+    }
+
+    btnStartRide.addEventListener("click", rideStart);
+    btnStopRide.addEventListener("click", rideStop);
   </script>
 {% endblock %}

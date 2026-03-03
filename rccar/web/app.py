@@ -2,41 +2,33 @@
 RCcar – app.py (Flask backend) – Vojtěch
 =======================================
 
-Cíl:
-- Login/registrace přes SQLite + session
+Verze pro DB se 3 tabulkami:
+- users
+- cars
+- rides
+(+ sqlite_sequence interně)
+
+Funkce:
+- Login / registrace přes SQLite + session
 - Dashboard:
-  - zobrazení jízd
-  - přepínání aktivního auta (bez admina) – jen mezi auty, která má user přiřazená
-  - ovládání serva přes Arduino (Serial)
-- Admin stránka (volitelné): přehled + mazání
+  - výběr aktivního auta (dropdown)
+  - ovládání serva přes Arduino (Serial) pomocí /api/control
+  - start/stop jízdy (zápis do rides)
+    - při startu se vytvoří ride se started_at a duration_sec = NULL
+    - při stopu se doplní duration_sec
+    - při zavření stránky zůstane duration_sec NULL = "nedojel" (OK)
+- Admin:
+  - přehled users, cars, rides
+  - mazání (DELETE) – díky ON DELETE CASCADE se smažou navázané rides
 
-DŮLEŽITÉ (aby nebyly "spousty chyb"):
------------------------------------
-1) Uživatel často nemá přiřazené žádné auto => dashboard by byl mrtvý.
-   Proto je tu "auto-assign":
-   - existuje DefaultCar (vytvoří se automaticky)
-   - při registraci (a i při loginu pro jistotu) se userovi DefaultCar přiřadí,
-     pokud nemá žádné auto.
-
-2) Arduino komunikace je volitelná:
-   - pokud chybí pyserial/arduino_comm, web pořád běží,
-     jen /api/control vrátí čitelnou chybu.
-
-Struktura projektu:
-rccar/
-  database/
-    rccar.db
-    schema.sql
-  web/
-    app.py
-    arduino_comm.py   (doporučeno – auto COM detekce)
-    templates/
-    static/
+Poznámka k Arduino:
+- Import arduino_comm je volitelný (když chybí pyserial, web běží dál)
 """
 
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -58,7 +50,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # ------------------------------------------------------------
 # 0) Arduino bridge (volitelný import)
 # ------------------------------------------------------------
-# Když to nejde importovat (např. chybí pyserial), web musí běžet dál.
 ARDUINO_AVAILABLE = True
 ARDUINO_IMPORT_ERROR = ""
 try:
@@ -90,8 +81,9 @@ app.config["SECRET_KEY"] = "CHANGE_ME_TO_SOMETHING_RANDOM_AND_SECRET"
 # ------------------------------------------------------------
 def get_db_connection() -> sqlite3.Connection:
     """
-    Otevře připojení k SQLite.
-    V SQLite jsou FOREIGN KEY defaultně OFF => musíme zapnout pro každé spojení.
+    Otevře připojení k SQLite DB.
+
+    DŮLEŽITÉ: SQLite má FK defaultně vypnuté => zapínáme pro každé spojení.
     """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -101,17 +93,15 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     """
-    Vytvoří tabulky podle schema.sql (zdroj pravdy).
+    Aplikuje schema.sql.
 
-    Poznámka:
-    - CREATE TABLE IF NOT EXISTS tabulku nepřepíše.
-    - Pokud jsi měnil schéma a DB už existuje, nejčistší je DB smazat a vytvořit znovu.
+    Pozn.: CREATE TABLE IF NOT EXISTS tabulky nepřepisuje.
+    Pokud jsi měnil schéma, nejčistší je smazat rccar.db a spustit init_db.py z database/.
     """
     if not SCHEMA_PATH.exists():
         raise FileNotFoundError(f"Chybí schema.sql: {SCHEMA_PATH}")
 
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-
     conn = get_db_connection()
     conn.executescript(schema_sql)
     conn.commit()
@@ -125,7 +115,7 @@ init_db()
 # 4) Auth helpery
 # ------------------------------------------------------------
 def current_user() -> Optional[Dict[str, Any]]:
-    """Vrátí přihlášeného usera ze session nebo None."""
+    """Vrátí přihlášeného uživatele ze session, nebo None."""
     if "user_id" not in session:
         return None
     return {
@@ -144,115 +134,35 @@ def admin_required() -> bool:
 
 
 # ------------------------------------------------------------
-# 5) Auta (M:N) – helpery
+# 5) Cars helpery (teď už bez user_cars)
 # ------------------------------------------------------------
-DEFAULT_CAR_NAME = "DefaultCar"
-
-
-def ensure_default_car_exists(conn: sqlite3.Connection) -> int:
-    """
-    Zajistí, že v tabulce cars existuje DefaultCar.
-    Vrátí jeho id.
-    """
-    row = conn.execute("SELECT id FROM cars WHERE name = ? LIMIT 1;", (DEFAULT_CAR_NAME,)).fetchone()
-    if row:
-        return int(row["id"])
-
-    # Vytvoření defaultního auta
-    conn.execute(
-        """
-        INSERT INTO cars (name, servo_pin, servo_center_deg, servo_offset_deg, motor_max_pwm)
-        VALUES (?, 3, 90, 45, 255);
-        """,
-        (DEFAULT_CAR_NAME,),
-    )
-    conn.commit()
-
-    row2 = conn.execute("SELECT id FROM cars WHERE name = ? LIMIT 1;", (DEFAULT_CAR_NAME,)).fetchone()
-    return int(row2["id"])  # type: ignore[arg-type]
-
-
-def user_has_any_car(conn: sqlite3.Connection, user_id: int) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM user_cars WHERE user_id = ? LIMIT 1;",
-        (user_id,),
-    ).fetchone()
-    return row is not None
-
-
-def assign_car_to_user(conn: sqlite3.Connection, user_id: int, car_id: int) -> None:
-    """
-    Přiřadí auto uživateli do user_cars (pokud už tam není).
-    """
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO user_cars (user_id, car_id, access_role)
-        VALUES (?, ?, 'driver');
-        """,
-        (user_id, car_id),
-    )
-    conn.commit()
-
-
-def ensure_user_has_default_car(user_id: int) -> None:
-    """
-    Blbuvzdorný helper:
-    - pokud user nemá žádné auto -> vytvoří DefaultCar (když chybí) a přiřadí mu ho.
-    """
-    conn = get_db_connection()
-    if not user_has_any_car(conn, user_id):
-        default_car_id = ensure_default_car_exists(conn)
-        assign_car_to_user(conn, user_id, default_car_id)
-    conn.close()
-
-
-def get_user_cars(user_id: int) -> List[Dict[str, Any]]:
-    """
-    Vrátí seznam aut, ke kterým má user přístup.
-    """
+def get_all_cars() -> List[Dict[str, Any]]:
+    """Vrátí všechna auta (pro dropdown)."""
     conn = get_db_connection()
     rows = conn.execute(
         """
-        SELECT
-            cars.id,
-            cars.name,
-            cars.servo_pin,
-            cars.servo_center_deg,
-            cars.servo_offset_deg,
-            cars.motor_max_pwm
-        FROM user_cars
-        JOIN cars ON cars.id = user_cars.car_id
-        WHERE user_cars.user_id = ?
-        ORDER BY cars.name;
-        """,
-        (user_id,),
+        SELECT id, name, power_limit_percent, steer_angle_deg, created_at
+        FROM cars
+        ORDER BY id;
+        """
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def user_has_car_access(user_id: int, car_id: int) -> bool:
+def car_exists(car_id: int) -> bool:
     conn = get_db_connection()
-    row = conn.execute(
-        "SELECT 1 FROM user_cars WHERE user_id = ? AND car_id = ? LIMIT 1;",
-        (user_id, car_id),
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM cars WHERE id = ? LIMIT 1;", (car_id,)).fetchone()
     conn.close()
     return row is not None
 
 
-def ensure_active_car_in_session(user_id: int) -> Optional[int]:
+def ensure_active_car_in_session() -> Optional[int]:
     """
-    Zajistí, že session["active_car_id"] je validní a user k němu má přístup.
-    Pokud ne, nastaví první dostupné auto uživatele.
-    Vrátí active_car_id nebo None, pokud user nemá žádné auto (to by se ale nemělo stát).
+    Zajistí, že session['active_car_id'] existuje a ukazuje na existující auto.
+    Když není nastavené, nastaví se první auto v DB.
     """
-    cars = get_user_cars(user_id)
-    if not cars:
-        # fallback: auto-assign (mělo by to vyřešit)
-        ensure_user_has_default_car(user_id)
-        cars = get_user_cars(user_id)
-
+    cars = get_all_cars()
     if not cars:
         session.pop("active_car_id", None)
         return None
@@ -263,10 +173,9 @@ def ensure_active_car_in_session(user_id: int) -> Optional[int]:
     except Exception:
         active_int = None
 
-    if active_int is not None and user_has_car_access(user_id, active_int):
+    if active_int is not None and car_exists(active_int):
         return active_int
 
-    # nastavíme první auto
     session["active_car_id"] = int(cars[0]["id"])
     return int(cars[0]["id"])
 
@@ -288,9 +197,7 @@ def info():
 def register():
     """
     Registrace:
-    - uloží usera do users
-    - AUTOMATICKY mu přiřadí DefaultCar (pokud nemá žádné auto)
-      => aby dashboard fungoval hned a bez admin zásahu.
+    - vytvoří řádek v users
     """
     if request.method == "GET":
         return render_template("register.html", user=current_user())
@@ -307,24 +214,15 @@ def register():
         flash("Role musí být 'user' nebo 'admin'.", "error")
         return redirect(url_for("register"))
 
-    password_hash = generate_password_hash(password)
+    pw_hash = generate_password_hash(password)
 
     try:
         conn = get_db_connection()
         conn.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            (username, password_hash, role),
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?);",
+            (username, pw_hash, role),
         )
         conn.commit()
-
-        # zjistíme id nového usera
-        new_user = conn.execute("SELECT id FROM users WHERE username = ? LIMIT 1;", (username,)).fetchone()
-        new_user_id = int(new_user["id"])  # type: ignore[index]
-
-        # auto-assign (DefaultCar)
-        default_car_id = ensure_default_car_exists(conn)
-        assign_car_to_user(conn, new_user_id, default_car_id)
-
         conn.close()
     except sqlite3.IntegrityError:
         flash("Uživatel s tímto jménem už existuje.", "error")
@@ -340,8 +238,6 @@ def login():
     Login:
     - ověří username + password
     - nastaví session
-    - pro jistotu udělá auto-assign (když user nemá žádné auto)
-    - nastaví session["active_car_id"]
     """
     if request.method == "GET":
         return render_template("login.html", user=current_user())
@@ -355,11 +251,12 @@ def login():
 
     conn = get_db_connection()
     row = conn.execute(
-        "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+        "SELECT id, username, password_hash, role FROM users WHERE username = ?;",
         (username,),
     ).fetchone()
     conn.close()
 
+    # Schválně jedna hláška pro obě chyby -> bezpečnější (neprozrazuje, jestli user existuje)
     if row is None or not check_password_hash(row["password_hash"], password):
         flash("Špatné uživatelské jméno nebo heslo.", "error")
         return redirect(url_for("login"))
@@ -368,9 +265,8 @@ def login():
     session["username"] = row["username"]
     session["role"] = row["role"]
 
-    # auto-assign, ať dashboard není prázdný
-    ensure_user_has_default_car(int(row["id"]))
-    ensure_active_car_in_session(int(row["id"]))
+    # nastavíme aktivní auto (první existující), aby dashboard hned fungoval
+    ensure_active_car_in_session()
 
     flash(f"Přihlášen jako {row['username']}.", "success")
     return redirect(url_for("dashboard"))
@@ -385,6 +281,14 @@ def logout():
 
 @app.route("/dashboard")
 def dashboard():
+    """
+    Dashboard:
+    - jen pro přihlášené
+    - dropdown aut (všechny cars)
+    - jízdy:
+      - user vidí svoje jízdy
+      - admin může vidět všechny (tady necháme pro admina všechny, jinak jen svoje)
+    """
     if not login_required():
         flash("Nejdřív se přihlas.", "error")
         return redirect(url_for("login"))
@@ -393,43 +297,39 @@ def dashboard():
     assert user is not None
     user_id = int(user["id"])
 
-    # zajistíme auto + aktivní auto
-    ensure_user_has_default_car(user_id)
-    active_car_id = ensure_active_car_in_session(user_id)
+    cars = get_all_cars()
+    active_car_id = ensure_active_car_in_session()
 
-    cars = get_user_cars(user_id)
-
-    # jízdy: admin všechny, user svoje
     conn = get_db_connection()
     if admin_required():
         rows = conn.execute(
             """
             SELECT
-                rides.id,
-                users.username AS username,
-                cars.name AS car_name,
-                rides.duration_sec AS duration_sec,
-                rides.created_at AS created_at
+              rides.id,
+              users.username AS username,
+              cars.name AS car_name,
+              rides.started_at,
+              rides.duration_sec
             FROM rides
             JOIN users ON users.id = rides.user_id
             JOIN cars  ON cars.id  = rides.car_id
-            ORDER BY rides.created_at DESC;
+            ORDER BY rides.started_at DESC;
             """
         ).fetchall()
     else:
         rows = conn.execute(
             """
             SELECT
-                rides.id,
-                users.username AS username,
-                cars.name AS car_name,
-                rides.duration_sec AS duration_sec,
-                rides.created_at AS created_at
+              rides.id,
+              users.username AS username,
+              cars.name AS car_name,
+              rides.started_at,
+              rides.duration_sec
             FROM rides
             JOIN users ON users.id = rides.user_id
             JOIN cars  ON cars.id  = rides.car_id
             WHERE rides.user_id = ?
-            ORDER BY rides.created_at DESC;
+            ORDER BY rides.started_at DESC;
             """,
             (user_id,),
         ).fetchall()
@@ -443,50 +343,19 @@ def dashboard():
         cars=cars,
         active_car_id=active_car_id,
         rides=rides,
+        arduino_available=ARDUINO_AVAILABLE,
+        arduino_error=ARDUINO_IMPORT_ERROR,
     )
-
-
-@app.route("/ride/add_demo")
-def add_demo_ride():
-    """
-    Přidá demo jízdu (120 s) aktuálnímu uživateli a jeho aktivnímu autu.
-    """
-    if not login_required():
-        flash("Nejdřív se přihlas.", "error")
-        return redirect(url_for("login"))
-
-    user_id = int(session["user_id"])
-    ensure_user_has_default_car(user_id)
-    car_id = ensure_active_car_in_session(user_id)
-
-    if car_id is None:
-        flash("Nemáš žádné auto (tohle by se už nemělo stát).", "error")
-        return redirect(url_for("dashboard"))
-
-    if not user_has_car_access(user_id, int(car_id)):
-        flash("Nemáš přístup k aktivnímu autu.", "error")
-        return redirect(url_for("dashboard"))
-
-    conn = get_db_connection()
-    conn.execute(
-        "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, ?)",
-        (user_id, int(car_id), 120),
-    )
-    conn.commit()
-    conn.close()
-
-    flash("Demo jízda přidána (120 s).", "success")
-    return redirect(url_for("dashboard"))
 
 
 # ------------------------------------------------------------
-# 7) API – výběr auta + ovládání serva
+# 7) API – výběr auta + ovládání serva + start/stop jízdy
 # ------------------------------------------------------------
 @app.route("/api/select_car", methods=["POST"])
 def api_select_car():
     """
-    Nastaví aktivní auto do session.
-    Uživatel si přepíná sám – ale jen mezi auty, která má přiřazená (user_cars).
+    Uloží aktivní auto do session.
+    Protože už nemáme user_cars, může si user vybrat libovolné auto z cars.
     """
     if not login_required():
         return jsonify({"error": "Not logged in"}), 401
@@ -499,13 +368,8 @@ def api_select_car():
     except Exception:
         return jsonify({"error": "Invalid car_id"}), 400
 
-    user_id = int(session["user_id"])
-
-    # auto-assign (pro jistotu, když je DB rozbitá / nový user)
-    ensure_user_has_default_car(user_id)
-
-    if not user_has_car_access(user_id, car_id_int):
-        return jsonify({"error": "No access to this car"}), 403
+    if not car_exists(car_id_int):
+        return jsonify({"error": "Car not found"}), 404
 
     session["active_car_id"] = car_id_int
     return jsonify({"ok": True, "active_car_id": car_id_int})
@@ -515,15 +379,11 @@ def api_select_car():
 def api_control():
     """
     Ovládání serva přes Arduino.
-    Příkazy:
-      STEER:L  (vlevo)
-      STEER:R  (vpravo)
-      STEER:C  (střed)
 
-    Bezpečnost:
-    - jen přihlášený
-    - jen povolené příkazy
-    - musí mít přístup k aktivnímu autu (M:N kontrola)
+    Povolené příkazy:
+      STEER:L
+      STEER:R
+      STEER:C
     """
     if not login_required():
         return jsonify({"error": "Not logged in"}), 401
@@ -535,30 +395,113 @@ def api_control():
     if cmd not in allowed:
         return jsonify({"error": "Command not allowed"}), 400
 
-    user_id = int(session["user_id"])
-    ensure_user_has_default_car(user_id)
-    car_id = ensure_active_car_in_session(user_id)
-
-    if car_id is None:
-        return jsonify({"error": "No active car selected"}), 400
-
-    if not user_has_car_access(user_id, int(car_id)):
-        return jsonify({"error": "No access to this car"}), 403
-
     if not ARDUINO_AVAILABLE:
-        return jsonify({"error": f"Arduino komunikace není dostupná: {ARDUINO_IMPORT_ERROR}"}), 500
+        return jsonify({"error": f"Arduino není dostupné: {ARDUINO_IMPORT_ERROR}"}), 500
 
     try:
-        # odešleme řádek do Arduino (Serial)
         arduino_comm.send_line(cmd)  # type: ignore[union-attr]
     except Exception as e:
         return jsonify({"error": f"Arduino send failed: {e}"}), 500
 
-    return jsonify({"ok": True, "sent": cmd, "car_id": int(car_id)})
+    return jsonify({"ok": True, "sent": cmd})
+
+
+@app.route("/api/ride/start", methods=["POST"])
+def api_ride_start():
+    """
+    Start jízdy:
+    - vytvoří nový záznam v rides:
+      user_id, car_id, started_at (default), duration_sec = NULL
+    - vrátí ride_id
+
+    Pozn.: active_car_id musí být vybrané (dropdown).
+    """
+    if not login_required():
+        return jsonify({"error": "Not logged in"}), 401
+
+    user_id = int(session["user_id"])
+    car_id = ensure_active_car_in_session()
+
+    if car_id is None:
+        return jsonify({"error": "No cars in database"}), 400
+
+    # nepovolíme start, pokud user už má rozjetou jízdu (duration_sec IS NULL)
+    conn = get_db_connection()
+    active = conn.execute(
+        "SELECT id FROM rides WHERE user_id = ? AND duration_sec IS NULL ORDER BY id DESC LIMIT 1;",
+        (user_id,),
+    ).fetchone()
+    if active:
+        conn.close()
+        return jsonify({"error": "Ride already running", "ride_id": int(active["id"])}), 409
+
+    cur = conn.execute(
+        "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, NULL);",
+        (user_id, int(car_id)),
+    )
+    conn.commit()
+    ride_id = int(cur.lastrowid)
+    conn.close()
+
+    return jsonify({"ok": True, "ride_id": ride_id, "car_id": int(car_id)})
+
+
+@app.route("/api/ride/stop", methods=["POST"])
+def api_ride_stop():
+    """
+    Stop jízdy:
+    - najde poslední aktivní jízdu usera (duration_sec IS NULL)
+    - spočítá duration_sec jako (teď - started_at)
+    - uloží duration_sec
+
+    Pokud žádná aktivní jízda není, vrátí 404.
+    """
+    if not login_required():
+        return jsonify({"error": "Not logged in"}), 401
+
+    user_id = int(session["user_id"])
+
+    conn = get_db_connection()
+    row = conn.execute(
+        """
+        SELECT id, started_at
+        FROM rides
+        WHERE user_id = ? AND duration_sec IS NULL
+        ORDER BY id DESC
+        LIMIT 1;
+        """,
+        (user_id,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"error": "No running ride"}), 404
+
+    # SQLite started_at je text datetime('now') -> typicky "YYYY-MM-DD HH:MM:SS"
+    # Spočítáme rozdíl v sekundách na Python straně (je to nejjednodušší).
+    started_str = str(row["started_at"])
+    try:
+        started_dt = datetime.strptime(started_str, "%Y-%m-%d %H:%M:%S")
+        now_dt = datetime.now()
+        duration = int((now_dt - started_dt).total_seconds())
+        if duration < 0:
+            duration = 0
+    except Exception:
+        # když by formát neseděl, dáme aspoň 0 a projekt běží dál
+        duration = 0
+
+    conn.execute(
+        "UPDATE rides SET duration_sec = ? WHERE id = ?;",
+        (duration, int(row["id"])),
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"ok": True, "ride_id": int(row["id"]), "duration_sec": duration})
 
 
 # ------------------------------------------------------------
-# 8) ADMIN – volitelné
+# 8) ADMIN
 # ------------------------------------------------------------
 @app.route("/admin")
 def admin():
@@ -566,47 +509,26 @@ def admin():
         abort(403)
 
     conn = get_db_connection()
-
     users_rows = conn.execute(
         "SELECT id, username, role, created_at FROM users ORDER BY id;"
     ).fetchall()
-
     cars_rows = conn.execute(
-        """
-        SELECT id, name, servo_pin, servo_center_deg, servo_offset_deg, motor_max_pwm, created_at
-        FROM cars ORDER BY id;
-        """
+        "SELECT id, name, power_limit_percent, steer_angle_deg, created_at FROM cars ORDER BY id;"
     ).fetchall()
-
-    user_cars_rows = conn.execute(
-        """
-        SELECT
-            users.username AS username,
-            cars.name AS car_name,
-            user_cars.access_role,
-            user_cars.created_at
-        FROM user_cars
-        JOIN users ON users.id = user_cars.user_id
-        JOIN cars  ON cars.id  = user_cars.car_id
-        ORDER BY cars.name, users.username;
-        """
-    ).fetchall()
-
     rides_rows = conn.execute(
         """
         SELECT
-            rides.id,
-            users.username AS username,
-            cars.name AS car_name,
-            rides.duration_sec,
-            rides.created_at
+          rides.id,
+          users.username AS username,
+          cars.name AS car_name,
+          rides.started_at,
+          rides.duration_sec
         FROM rides
         JOIN users ON users.id = rides.user_id
         JOIN cars  ON cars.id  = rides.car_id
-        ORDER BY rides.created_at DESC;
+        ORDER BY rides.started_at DESC;
         """
     ).fetchall()
-
     conn.close()
 
     return render_template(
@@ -614,7 +536,6 @@ def admin():
         user=current_user(),
         users=[dict(u) for u in users_rows],
         cars=[dict(c) for c in cars_rows],
-        user_cars=[dict(x) for x in user_cars_rows],
         rides=[dict(r) for r in rides_rows],
         arduino_available=ARDUINO_AVAILABLE,
         arduino_error=ARDUINO_IMPORT_ERROR,
@@ -627,7 +548,7 @@ def admin_delete_ride(ride_id: int):
         abort(403)
 
     conn = get_db_connection()
-    cur = conn.execute("DELETE FROM rides WHERE id = ?", (ride_id,))
+    cur = conn.execute("DELETE FROM rides WHERE id = ?;", (ride_id,))
     conn.commit()
     conn.close()
 
@@ -640,17 +561,30 @@ def admin_delete_user(user_id: int):
     if not admin_required():
         abort(403)
 
-    # admin nesmí smazat sám sebe
     if int(session.get("user_id", -1)) == user_id:
         flash("Nemůžeš smazat sám sebe.", "error")
         return redirect(url_for("admin"))
 
     conn = get_db_connection()
-    cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    cur = conn.execute("DELETE FROM users WHERE id = ?;", (user_id,))
     conn.commit()
     conn.close()
 
     flash("Uživatel smazán." if cur.rowcount else "Uživatel nenalezen.", "success" if cur.rowcount else "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/car/<int:car_id>/delete", methods=["POST"])
+def admin_delete_car(car_id: int):
+    if not admin_required():
+        abort(403)
+
+    conn = get_db_connection()
+    cur = conn.execute("DELETE FROM cars WHERE id = ?;", (car_id,))
+    conn.commit()
+    conn.close()
+
+    flash("Auto smazáno." if cur.rowcount else "Auto nenalezeno.", "success" if cur.rowcount else "error")
     return redirect(url_for("admin"))
 
 

@@ -1,6 +1,6 @@
 /*
-  car.ino – Arduino UNO (servo steering only)
-  ===========================================
+  car.ino – Arduino UNO (servo steering only) – Vojtěch
+  =====================================================
 
   Servo zapojení:
   - signál (oranžový/žlutý) -> D3
@@ -10,7 +10,7 @@
   Příkazy přes Serial (posílá Flask):
     STEER:L   -> vlevo (center - 45°)
     STEER:R   -> vpravo (center + 45°)
-    STEER:C   -> střed (0° v logice ovládání)
+    STEER:C   -> střed
 */
 
 #include <Arduino.h>
@@ -38,7 +38,6 @@ bool handleCommand(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return false;
 
-  // očekáváme jen STEER:...
   if (cmd.startsWith("STEER:")) {
     String a = cmd.substring(6);
     a.trim();
