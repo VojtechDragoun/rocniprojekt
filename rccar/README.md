@@ -1,6 +1,7 @@
 pip instal ....
 2popsat jak stáhnout knihovny + ctrl +c +ctrlv
 
+py -m pip install flask
 py -m pip install pyserial     | Instalace knihovny
 
 kód z car.ino se musí zkopírovat a poslat např přes arduino ide do arduina před spuštěním stránky
@@ -19,7 +20,7 @@ Jazyky
 - HTML – frontend šablony 
 - CSS – stylování společné pro všechny stránky 
 - SQL – databázové schéma 
-- c++ - ovládání esp32
+- c++ - ovládání arduina
 
 Databáze
 - SQLite – lokální souborová databáze Uživatelské jméno

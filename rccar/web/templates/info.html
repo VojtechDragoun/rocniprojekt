@@ -1,30 +1,152 @@
 {% extends "base.html" %}
 
-{% block title %}RCcar – Info{% endblock %}
+{% block title %}RCcar – Informace o projektu{% endblock %}
 
 {% block content %}
-  <!--
-    info.html
-    ---------
-    Stránka s popisem projektu a architekturou.
-  -->
   <div class="card">
-    <h1>Informace o projektu</h1>
+    <h1>RCcar – informace o projektu</h1>
 
-    <h2>Co projekt řeší</h2>
     <p>
-      Webové rozhraní a backend (Flask) umožní uživateli ovládat autíčko,
-      ukládat záznamy o jízdách do databáze a zobrazovat historii jízd.
+      RCcar je školní projekt zaměřený na propojení webové aplikace, databáze
+      a mikrokontroleru Arduino. Uživatel se přihlásí do webového rozhraní,
+      vybere auto, může spustit a ukončit jízdu a zároveň ovládat zatáčení
+      servomotoru přes dashboard.
     </p>
 
-    <h2>Technologie</h2>
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Hlavní funkce projektu</h2>
     <p>
-      Flask (Python), HTML/CSS, SQLite, ESP32 (Wi-Fi komunikace), motory/servo.
+      Projekt aktuálně umožňuje registraci a přihlášení uživatele, rozlišení
+      běžného uživatele a admina, výběr auta, záznam jízd do databáze a
+      ovládání serva přes Arduino. Admin má navíc možnost prohlížet a mazat
+      vybraná data z databáze přes administrační rozhraní.
     </p>
 
-    <h2>Architektura</h2>
+    <div style="margin-top: 12px;">
+      <p><b>Co už projekt umí:</b></p>
+      <ul style="margin-left: 22px; line-height: 1.8;">
+        <li>registrace a přihlášení uživatele</li>
+        <li>ukládání hashovaných hesel do databáze</li>
+        <li>role uživatel / admin</li>
+        <li>výběr auta v dashboardu</li>
+        <li>start a ukončení jízdy</li>
+        <li>ukládání jízd do databáze</li>
+        <li>ovládání servomotoru přes web</li>
+        <li>správa databázových dat v admin sekci</li>
+      </ul>
+    </div>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Použité technologie</h2>
     <p>
-      PC/Web → Flask backend → komunikace na ESP32 (příkazy) + DB (log jízd).
+      Backend aplikace je napsaný v jazyce Python s použitím frameworku Flask.
+      Databáze je řešena pomocí SQLite. Pro bezpečné ukládání hesel se používá
+      Werkzeug, který hesla zahashuje. Komunikace s Arduinem probíhá přes knihovnu pyserial.
+      Frontend je tvořen pomocí HTML, CSS a JavaScriptu. Arduino kód je napsaný v c++.
+    </p>
+
+    <div style="margin-top: 12px;">
+      <p><b>Použité jazyky a knihovny:</b></p>
+      <ul style="margin-left: 22px; line-height: 1.8;">
+        <li>Python</li>
+        <li>Flask</li>
+        <li>Werkzeug</li>
+        <li>sqlite3</li>
+        <li>pyserial</li>
+        <li>HTML</li>
+        <li>CSS</li>
+        <li>JavaScript</li>
+        <li>C++ / Arduino</li>
+      </ul>
+    </div>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Databáze projektu</h2>
+    <p>
+      Databáze projektu slouží k ukládání uživatelů, aut a jízd.
+      Každá jízda je přiřazena jednomu uživateli a jednomu autu.
+      Díky tomu lze evidovat, kdo s jakým autem jel a jak dlouho jízda trvala.
+    </p>
+
+    <p>
+      V projektu jsou použité vztahy 1:N i M:N:
+    </p>
+
+    <ul style="margin-left: 22px; line-height: 1.8;">
+      <li><b>1:N</b> mezi <i>users</i> a <i>rides</i> – jeden uživatel může mít více jízd</li>
+      <li><b>1:1</b> mezi <i>username</i> a <i>id</i> – každý jeden uživatel má svoje unikátní id</li>
+      <li><b>M:N</b> mezi <i>users</i> a <i>cars</i> – jeden uživatel může mít více aut a jedno auto může mít více uživatelů</li>
+    </ul>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>ER diagram databáze</h2>
+    <p>
+      Níže je zobrazen ER diagram databáze projektu. Pokud budeš mít exportovaný
+      obrázek diagramu ve složce <b>web/static/images</b>, zobrazí se přímo na stránce.
+    </p>
+
+    <div style="margin-top: 14px;">
+      <img
+        src="{{ url_for('static', filename='images/er_diagram.png') }}"
+        alt="ER diagram databáze RCcar"
+        style="max-width:100%; border-radius:16px; border:1px solid rgba(148,163,184,0.18);"
+      >
+    </div>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Princip fungování aplikace</h2>
+    <p>
+      Uživatel se přihlásí do webové aplikace, vybere auto a v dashboardu může
+      ovládat zatáčení serva. Při stisku tlačítka Start se do databáze založí
+      nová jízda. Při stisku Stop se jízda ukončí a dopočítá se její délka.
+      Pokud se stránka zavře bez ukončení jízdy, zůstane v databázi záznam
+      s nevyplněnou délkou jízdy, což značí nedokončenou jízdu.
+    </p>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Použité algoritmy a logika</h2>
+    <div style="line-height:1.8;">
+      <p><b>1. Přihlášení uživatele</b><br>
+      Zadané heslo se porovná s hashovaným heslem uloženým v databázi.
+      Pokud se údaje shodují, vytvoří se uživatelská session.</p>
+
+      <p><b>2. Výběr auta</b><br>
+      Uživatel si v dashboardu vybere auto, jehož id se uloží do session.
+      Díky tomu backend ví, se kterým autem aktuálně pracuje.</p>
+
+      <p><b>3. Start jízdy</b><br>
+      Po kliknutí na tlačítko Start se do tabulky jízd vloží nový záznam
+      obsahující uživatele, vybrané auto a čas začátku jízdy.</p>
+
+      <p><b>4. Stop jízdy</b><br>
+      Po kliknutí na Stop se dopočítá délka jízdy jako rozdíl času konce a času začátku.
+      Výsledek se uloží do databáze do sloupce <i>duration_sec</i>.</p>
+
+      <p><b>5. Ovládání serva</b><br>
+      JavaScript pošle příkaz na Flask endpoint, Flask ho předá přes pyserial
+      do Arduina a Arduino nastaví odpovídající úhel serva.</p>
+    </div>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Autoři</h2>
+    <p>
+      Autor projektu: <b>Vojtěch Dragoun</b>
+    </p>
+
+    <hr style="opacity:0.25; margin: 18px 0;">
+
+    <h2>Odkaz na Git</h2>
+    <p>
+      Odkaz na github repozitář
+      <br>
+      <code><a href="https://github.com/VojtechDragoun/rocniprojekt" target="_blank">https://github.com/VojtechDragoun/rocniprojekt</a></code>
     </p>
   </div>
 {% endblock %}
