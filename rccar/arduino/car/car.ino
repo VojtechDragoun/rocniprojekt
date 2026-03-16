@@ -1,6 +1,6 @@
 /*
-  car.ino – Arduino UNO (servo steering only) – Vojtěch
-  =====================================================
+  car.ino – Arduino UNO (servo steering only)
+  ===========================================
 
   Servo zapojení:
   - signál (oranžový/žlutý) -> D3
@@ -18,7 +18,7 @@
 
 static const int SERVO_PIN = 3;
 
-// Kalibrace středu (tohle je tvoje "0°")
+// Kalibrace středu
 static const int SERVO_CENTER_DEG = 90;
 
 // Offset do stran (±45°)
@@ -38,6 +38,7 @@ bool handleCommand(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return false;
 
+  // očekáváme jen STEER:...
   if (cmd.startsWith("STEER:")) {
     String a = cmd.substring(6);
     a.trim();

@@ -1,6 +1,3 @@
-pip instal ....
-2popsat jak stáhnout knihovny + ctrl +c +ctrlv
-
 py -m pip install flask
 py -m pip install pyserial     | Instalace knihovny
 
@@ -32,7 +29,7 @@ Standardní knihovny Pythonu
 
 Flask - je potřeba stáhnout
 - Werkzeug 
-- Jinja2 chci dát pryč
+- Jinja2 
 - ItsDangerous
 - Click 
 - Blinker

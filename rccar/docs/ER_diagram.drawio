@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.1 Chrome/142.0.7444.265 Electron/39.8.0 Safari/537.36" version="29.6.1">
   <diagram name="Stránka-1" id="mq4OwixUovIC4L6A2F6h">
-    <mxGraphModel dx="1285" dy="764" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1209" dy="719" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -21,12 +21,6 @@
         </mxCell>
         <mxCell id="y7dOK7o-fzK30U75e1MH-32" parent="y7dOK7o-fzK30U75e1MH-27" style="text;strokeColor=none;fillColor=none;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=12;whiteSpace=wrap;html=1;" value="&lt;div style=&quot;color: rgb(204, 204, 204); background-color: rgb(31, 31, 31); font-family: Consolas, &amp;quot;Courier New&amp;quot;, monospace; font-size: 14px; line-height: 19px; white-space: pre;&quot;&gt;created_at &amp;nbsp; &amp;nbsp;&lt;span style=&quot;color: #569cd6;&quot;&gt;TEXT&lt;/span&gt; &lt;span style=&quot;color: #569cd6;&quot;&gt;NOT NULL&lt;/span&gt; &lt;span style=&quot;color: #569cd6;&quot;&gt;DEFAULT&lt;/span&gt; (&lt;span style=&quot;color: #569cd6;&quot;&gt;datetime&lt;/span&gt;(&lt;span style=&quot;color: #ce9178;&quot;&gt;&#39;now&#39;&lt;/span&gt;))&lt;/div&gt;" vertex="1">
           <mxGeometry height="30" width="416" y="146" as="geometry" />
-        </mxCell>
-        <mxCell id="y7dOK7o-fzK30U75e1MH-51" edge="1" parent="y7dOK7o-fzK30U75e1MH-27" source="y7dOK7o-fzK30U75e1MH-29" style="edgeStyle=entityRelationEdgeStyle;fontSize=12;html=1;endArrow=ERmandOne;startArrow=ERmandOne;rounded=0;" target="y7dOK7o-fzK30U75e1MH-28" value="">
-          <mxGeometry height="100" relative="1" width="100" as="geometry">
-            <mxPoint x="510" y="290" as="sourcePoint" />
-            <mxPoint x="610" y="190" as="targetPoint" />
-          </mxGeometry>
         </mxCell>
         <mxCell id="y7dOK7o-fzK30U75e1MH-34" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;align=center;fontSize=14;" value="cars" vertex="1">
           <mxGeometry height="176" width="470" x="610" y="290" as="geometry" />
