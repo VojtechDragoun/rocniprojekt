@@ -11,6 +11,9 @@ Tento projekt umožňuje ovládání RC auta přes webovou aplikaci.
 
 Uživatel se přihlásí do aplikace a následně může auto ovládat přes dashboard pomocí klávesnice.
 
+Aplikace ukládá data o uživatelích a jízdách do SQLite databáze.
+Zároveň ukládá poslední ovládací příkaz auta do souboru last_command.json a při otevření dashboardu ho znovu načítá.
+
 ---
 
 Instalace
@@ -87,6 +90,9 @@ Funkce aplikace
     admin
 - dashboard dostupný pouze po přihlášení
 - admin má přístup k rozšířeným funkcím (mazání v databázi)
+- ukládání jízd do databáze
+- ukládání posledního ovládacího příkazu do souboru JSON
+- načítání posledního ovládacího příkazu ze souboru na dashboardu
 
 ---
 
@@ -97,6 +103,9 @@ Na stránce dashboard:
 W  pohyb dopředu
 A  zatáčení doleva
 D  zatáčení doprava
+
+Po odeslání ovládacího příkazu se poslední příkaz uloží do souboru last_command.json.
+Po znovunačtení dashboardu se poslední uložený příkaz zobrazí uživateli.
 
 ---
 
@@ -110,7 +119,27 @@ Umístění:
 
 Obsah:
 - uživatelé (včetně hashovaných hesel)
+- jízdy
 - data aplikace
+
+Projekt ukládá a načítá data z/do databáze.
+Do databáze se ukládají hlavně uživatelé a záznamy jízd.
+
+---
+
+Ukládání a načítání dat ze souboru
+
+Použitý soubor:
+web/last_command.json
+
+Soubor obsahuje:
+- poslední odeslaný příkaz auta
+- čas uložení příkazu
+
+Při odeslání příkazu z dashboardu se tento soubor aktualizuje.
+Při otevření dashboardu se data ze souboru načtou a zobrazí na stránce.
+
+Tím je splněno ukládání a načítání dat z/do souboru.
 
 ---
 
@@ -160,6 +189,8 @@ Standardní knihovny
 - sqlite3 – databáze
 - pathlib – práce s cestami
 - typing – typování
+- json – ukládání a načítání dat ze souboru
+- datetime – uložení času posledního příkazu
 
 ---
 
@@ -200,7 +231,8 @@ rccar/
 │   │   └── info.html
 │   │
 │   ├── app.py
-│   └── arduino_comm.py
+│   ├── arduino_comm.py
+│   └── last_command.json
 │
 └── README.md
 
@@ -215,3 +247,4 @@ Poznámky
 
 Projekt vyžaduje připojené Arduino během běhu.
 Bez Arduino nebude ovládání funkční.
+Soubor last_command.json nesmí být prázdný, protože slouží pro ukládání a načítání posledního ovládacího příkazu.

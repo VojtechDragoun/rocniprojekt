@@ -42,6 +42,27 @@
     </p>
     {# stručný návod k ovládání klávesnicí #}
 
+    <!-- POSLEDNÍ OVLÁDACÍ PŘÍKAZ ZE SOUBORU -->
+    <div style="margin: 14px 0; padding: 12px; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;">
+      <h3 style="margin-top:0;">Poslední příkaz načtený ze souboru</h3>
+
+      {% if last_command and last_command.cmd %}
+        <p style="margin: 6px 0;">
+          <b>Příkaz:</b> {{ last_command.cmd }}
+        </p>
+        <p style="margin: 6px 0;">
+          <b>Čas uložení:</b> {{ last_command.time }}
+        </p>
+      {% else %}
+        <p style="margin: 6px 0;">
+          Zatím nebyl uložen žádný příkaz.
+        </p>
+      {% endif %}
+    </div>
+    {# nově:
+       tahle část zobrazuje data načtená ze souboru last_command.json
+       tím je na stránce vidět "načítání dat ze souboru" #}
+
 
     <!-- VÝBĚR AUTA -->
     {% if cars and cars|length > 0 %}

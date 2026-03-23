@@ -13,6 +13,7 @@ Tenhle soubor řeší hlavně:
 - komunikaci s Arduinem přes serial
 - start a stop jízdy
 - admin sekci a mazání dat
+- ukládání a načítání posledního ovládacího příkazu ze souboru JSON
 
 Databáze používá 3 hlavní tabulky:
 - users
@@ -28,6 +29,10 @@ Komunikace s Arduinem je řešená přes soubor arduino_comm.py
 from __future__ import annotations
 # dovolí modernější práci s typy v Pythonu
 
+import json
+# nově přidáno:
+# práce se souborem last_command.json
+
 import logging
 # knihovna pro logování do konzole
 
@@ -38,8 +43,7 @@ import sys
 # používá se tady hlavně kvůli stdout pro logging
 
 from datetime import datetime
-# import datetime
-# tady aktuálně není nutně potřeba všude, ale může se hodit při práci s časem
+# používá se i pro uložení času posledního příkazu do JSON souboru
 
 from pathlib import Path
 # pohodlná práce s cestami k souborům
@@ -112,6 +116,15 @@ DB_PATH = PROJECT_ROOT / "database" / "rccar.db"
 # cesta k SQL schématu
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
 
+# ------------------------------------------------------------
+# 1.1) Cesta k JSON souboru s posledním příkazem
+# ------------------------------------------------------------
+# nově přidáno:
+# tenhle soubor bude sloužit ke splnění požadavku
+# "ukládá a načítá data z/do souboru"
+
+LAST_COMMAND_PATH = BASE_DIR / "last_command.json"
+
 
 # ------------------------------------------------------------
 # 2) Flask aplikace
@@ -156,6 +169,7 @@ setup_logging()
 app.logger.info("Aplikace RCcar startuje.")
 app.logger.info(f"DB_PATH = {DB_PATH}")
 app.logger.info(f"SCHEMA_PATH = {SCHEMA_PATH}")
+app.logger.info(f"LAST_COMMAND_PATH = {LAST_COMMAND_PATH}")
 
 if ARDUINO_AVAILABLE:
     # když se podařilo načíst Arduino modul
@@ -212,6 +226,126 @@ def init_db() -> None:
 
 # databázi inicializujeme hned při startu appky
 init_db()
+
+
+# ------------------------------------------------------------
+# 3.1) Helpery pro práci se souborem last_command.json
+# ------------------------------------------------------------
+# nově přidáno:
+# tady jsou funkce pro ukládání a načítání posledního příkazu auta
+
+def ensure_last_command_file() -> None:
+    """
+    Zajistí, že existuje soubor last_command.json
+    a že obsahuje platný základní JSON.
+
+    Když soubor neexistuje nebo je prázdný/rozbitý,
+    vytvoří se výchozí obsah.
+    """
+    default_data = {
+        "cmd": None,
+        "time": None,
+    }
+
+    try:
+        # když soubor neexistuje, rovnou ho vytvoříme
+        if not LAST_COMMAND_PATH.exists():
+            LAST_COMMAND_PATH.write_text(
+                json.dumps(default_data, indent=4, ensure_ascii=False),
+                encoding="utf-8"
+            )
+            app.logger.info("Vytvořen nový soubor last_command.json")
+            return
+
+        # načtení existujícího obsahu
+        raw = LAST_COMMAND_PATH.read_text(encoding="utf-8").strip()
+
+        # když je soubor prázdný, opravíme ho
+        if not raw:
+            LAST_COMMAND_PATH.write_text(
+                json.dumps(default_data, indent=4, ensure_ascii=False),
+                encoding="utf-8"
+            )
+            app.logger.warning("Soubor last_command.json byl prázdný, byl opraven.")
+            return
+
+        # kontrola, že je obsah validní JSON
+        data = json.loads(raw)
+
+        # když to není dict, také opravíme
+        if not isinstance(data, dict):
+            raise ValueError("last_command.json nemá objekt JSON")
+
+        # doplnění chybějících klíčů
+        if "cmd" not in data:
+            data["cmd"] = None
+        if "time" not in data:
+            data["time"] = None
+
+        LAST_COMMAND_PATH.write_text(
+            json.dumps(data, indent=4, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+    except Exception as e:
+        # když je soubor poškozený, přepíšeme ho výchozí verzí
+        app.logger.warning(f"Soubor last_command.json byl poškozený, obnovuji ho: {e}")
+        LAST_COMMAND_PATH.write_text(
+            json.dumps(default_data, indent=4, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+
+def load_last_command() -> Dict[str, Any]:
+    """
+    Načte poslední příkaz ze souboru last_command.json.
+
+    Vrací slovník ve tvaru:
+    {
+        "cmd": "STEER:L" nebo None,
+        "time": "2026-03-23 21:10:00" nebo None
+    }
+    """
+    ensure_last_command_file()
+
+    try:
+        data = json.loads(LAST_COMMAND_PATH.read_text(encoding="utf-8"))
+
+        # pojistka, kdyby v JSON něco chybělo
+        return {
+            "cmd": data.get("cmd"),
+            "time": data.get("time"),
+        }
+
+    except Exception as e:
+        app.logger.error(f"Nepodařilo se načíst last_command.json: {e}")
+        return {
+            "cmd": None,
+            "time": None,
+        }
+
+
+def save_last_command(cmd: str) -> None:
+    """
+    Uloží poslední odeslaný příkaz auta do JSON souboru.
+
+    Tohle je právě ta část "ukládání do souboru".
+    """
+    data = {
+        "cmd": cmd,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    LAST_COMMAND_PATH.write_text(
+        json.dumps(data, indent=4, ensure_ascii=False),
+        encoding="utf-8"
+    )
+
+    app.logger.info(f"Uložen poslední příkaz do souboru: {data}")
+
+
+# zajistíme existenci souboru hned při startu aplikace
+ensure_last_command_file()
 
 
 # ------------------------------------------------------------
@@ -468,6 +602,11 @@ def dashboard():
     cars = get_all_cars()
     active_car_id = ensure_active_car_in_session()
 
+    # nově přidáno:
+    # načtení posledního příkazu ze souboru JSON
+    # tohle je část "načítání dat ze souboru"
+    last_command = load_last_command()
+
     conn = get_db_connection()
 
     if admin_required():
@@ -517,6 +656,7 @@ def dashboard():
         rides=rides,
         arduino_available=ARDUINO_AVAILABLE,
         arduino_error=ARDUINO_IMPORT_ERROR,
+        last_command=last_command,
     )
 
 
@@ -595,6 +735,11 @@ def api_control():
     try:
         # odeslání příkazu do Arduina
         arduino_comm.send_line(cmd)  # type: ignore[union-attr]
+
+        # nově přidáno:
+        # po úspěšném odeslání příkazu si ten příkaz uložíme do JSON souboru
+        # tohle je část "ukládání dat do souboru"
+        save_last_command(cmd)
 
         app.logger.info(
             f"api/control: user_id={session.get('user_id')} poslal příkaz '{cmd}'"
@@ -863,5 +1008,10 @@ def admin_delete_car(car_id: int):
 
 if __name__ == "__main__":
     # přímé spuštění Flask app
+
+    # nově přidáno:
+    # při startu ještě jednou ověříme, že soubor pro poslední příkaz existuje
+    ensure_last_command_file()
+
     app.logger.info("Spouštím Flask server na 0.0.0.0:5000 v debug režimu.")
     app.run(debug=True, host="0.0.0.0", port=5000)
