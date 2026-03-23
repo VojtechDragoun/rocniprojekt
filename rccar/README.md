@@ -1,5 +1,6 @@
-py -m pip install flask
-py -m pip install pyserial     | Instalace knihovny
+pip install flask
+pip install pytest
+pip install pyserial     | Instalace knihovny
 
 kód z car.ino se musí zkopírovat a poslat např přes arduino ide do arduina před spuštěním stránky
 musí se vybrat COM port , do kterého je připojené arduino přes usb a pak to do arduina nahrát
@@ -11,7 +12,7 @@ V navbaru je také dropdown menu, kde je přihlášení a registrace. (admin log
 Úspěšná registrace se zapíše i s zahashovaným heslem do databáze rccar.db, která je ve složce database, která je ve složce projektu.
 Složka database také obsahuje init_db.py, který je pro znovuvytvoření tabulek, ale tabulky budou prázdné.
 po přihlášení, jako uživatel nebo admin se zpřístupní stránka dash board, kde se pomocí kláves/ stisknutí talčítka ovládá auto(motory od auta - pohon "W" a zatáčení pomocí serva "A" nebo "D")
-
+Testy se spouští pytest
 Jazyky
 - Python – backend (Flask server + práce s databází)
 - HTML – frontend šablony 

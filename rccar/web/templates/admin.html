@@ -1,21 +1,40 @@
 {% extends "base.html" %}
+{# tenhle template dědí z base.html
+   takže společné věci jako navbar, head, footer apod.
+   jsou řešené tam a tady se doplňuje jen obsah stránky #}
 
 {% block title %}RCcar – Admin{% endblock %}
+{# title se vloží do <title> v base.html #}
 
 {% block content %}
+  {# začátek hlavního obsahu stránky #}
+
   <div class="card">
+    {# karta pro celý admin obsah
+       class="card" se styluje v style.css #}
+
     <h1>Admin – správa databáze</h1>
+    {# hlavní nadpis stránky #}
 
     {% if not arduino_available %}
+      {# pokud Arduino není dostupné, zobrazí se upozornění #}
+
       <p style="color:#fca5a5;">
         Arduino není dostupné: {{ arduino_error }}
       </p>
+      {# arduino_error je text chyby, který typicky posílá Flask z app.py #}
     {% endif %}
 
     <hr style="opacity:0.25; margin: 16px 0;">
+    {# oddělovací čára mezi sekcemi #}
+
 
     <h2>Uživatelé</h2>
+    {# sekce pro výpis uživatelů #}
+
     {% if users and users|length > 0 %}
+      {# když existují nějací uživatelé, zobrazí se tabulka #}
+
       <table>
         <thead>
           <tr>
@@ -26,31 +45,60 @@
             <th>Akce</th>
           </tr>
         </thead>
+
         <tbody>
           {% for u in users %}
+            {# projde všechny uživatele, které Flask poslal do template #}
+
             <tr>
               <td>{{ u.id }}</td>
+              {# id uživatele #}
+
               <td>{{ u.username }}</td>
+              {# přihlašovací jméno #}
+
               <td>{{ u.role }}</td>
+              {# role – typicky user nebo admin #}
+
               <td>{{ u.created_at }}</td>
+              {# datum vytvoření účtu #}
+
               <td>
+                {# akce pro konkrétního uživatele #}
+
                 <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
                       onsubmit="return confirm('Smazat uživatele {{ u.username }}? (smažou se i jeho jízdy)');">
+                  {# formulář na smazání uživatele
+                     method POST je správně, protože mění databázi
+                     url_for(...) vytvoří adresu na Flask route admin_delete_user
+                     user_id=u.id pošle id uživatele do url
+                     confirm(...) zobrazí potvrzovací okno v prohlížeči #}
+
                   <button class="btn" type="submit">Smazat</button>
+                  {# tlačítko pro odeslání formuláře #}
                 </form>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+
     {% else %}
+      {# když žádní uživatelé nejsou #}
       <p><em>Žádní uživatelé.</em></p>
     {% endif %}
 
+
     <hr style="opacity:0.25; margin: 16px 0;">
+    {# další oddělení sekcí #}
+
 
     <h2>Auta</h2>
+    {# sekce pro auta #}
+
     {% if cars and cars|length > 0 %}
+      {# pokud existují auta, zobrazí se tabulka #}
+
       <table>
         <thead>
           <tr>
@@ -62,17 +110,34 @@
             <th>Akce</th>
           </tr>
         </thead>
+
         <tbody>
           {% for c in cars %}
+            {# projde všechna auta #}
+
             <tr>
               <td>{{ c.id }}</td>
+              {# id auta #}
+
               <td>{{ c.name }}</td>
+              {# název auta #}
+
               <td>{{ c.power_limit_percent }}</td>
+              {# omezení výkonu v procentech #}
+
               <td>{{ c.steer_angle_deg }}</td>
+              {# maximální úhel zatáčení #}
+
               <td>{{ c.created_at }}</td>
+              {# datum vytvoření záznamu auta #}
+
               <td>
                 <form method="POST" action="{{ url_for('admin_delete_car', car_id=c.id) }}"
                       onsubmit="return confirm('Smazat auto {{ c.name }}? (smažou se i navázané jízdy)');">
+                  {# formulář na smazání auta
+                     po smazání auta se podle databáze smažou i navázané jízdy
+                     protože v schema.sql je ON DELETE CASCADE #}
+
                   <button class="btn" type="submit">Smazat</button>
                 </form>
               </td>
@@ -80,14 +145,21 @@
           {% endfor %}
         </tbody>
       </table>
+
     {% else %}
       <p><em>Žádná auta.</em></p>
     {% endif %}
 
+
     <hr style="opacity:0.25; margin: 16px 0;">
 
+
     <h2>Jízdy</h2>
+    {# sekce pro jízdy #}
+
     {% if rides and rides|length > 0 %}
+      {# pokud existují jízdy, zobrazí se tabulka #}
+
       <table>
         <thead>
           <tr>
@@ -99,17 +171,42 @@
             <th>Akce</th>
           </tr>
         </thead>
+
         <tbody>
           {% for r in rides %}
+            {# projde všechny jízdy #}
+
             <tr>
               <td>{{ r.id }}</td>
+              {# id jízdy #}
+
               <td>{{ r.username }}</td>
+              {# jméno uživatele
+                 to většinou znamená, že Flask udělal JOIN rides + users #}
+
               <td>{{ r.car_name }}</td>
+              {# název auta
+                 opět typicky z SQL JOIN rides + cars #}
+
               <td>{{ r.started_at }}</td>
-              <td>{% if r.duration_sec is none %}<em>Nedokončeno</em>{% else %}{{ r.duration_sec }}{% endif %}</td>
+              {# čas začátku jízdy #}
+
+              <td>
+                {% if r.duration_sec is none %}
+                  <em>Nedokončeno</em>
+                  {# pokud duration_sec = NULL v databázi,
+                     vypíše se nedokončeno #}
+                {% else %}
+                  {{ r.duration_sec }}
+                  {# jinak se vypíše délka jízdy v sekundách #}
+                {% endif %}
+              </td>
+
               <td>
                 <form method="POST" action="{{ url_for('admin_delete_ride', ride_id=r.id) }}"
                       onsubmit="return confirm('Smazat jízdu ID={{ r.id }}?');">
+                  {# smazání konkrétní jízdy #}
+
                   <button class="btn" type="submit">Smazat</button>
                 </form>
               </td>
@@ -117,8 +214,12 @@
           {% endfor %}
         </tbody>
       </table>
+
     {% else %}
       <p><em>Žádné jízdy.</em></p>
     {% endif %}
   </div>
+  {# konec hlavní karty #}
+
 {% endblock %}
+{# konec content bloku, který se vloží do base.html #}

@@ -1,34 +1,95 @@
 {% extends "base.html" %}
+{# tento template dědí z base.html
+   díky tomu už nemusí znovu obsahovat celý html dokument,
+   navbar ani načítání css #}
 
 {% block title %}RCcar – Přihlášení{% endblock %}
+{# text, který se vloží do <title> v base.html #}
 
 {% block content %}
+  {# začátek obsahu stránky, který se vloží do bloku content v base.html #}
+
   <!--
     login.html
     ----------
-    Přihlašovací formulář.
-    Poznámka: action url_for('login') předpokládá route /login (GET+POST).
+    Přihlašovací stránka projektu.
+
+    Slouží k tomu, aby se uživatel mohl přihlásit do aplikace.
+    Vyplní svoje uživatelské jméno a heslo a formulář se odešle na backend.
+
+    Backend pak typicky:
+    1) načte data z formuláře
+    2) najde uživatele v databázi
+    3) porovná heslo s hashem uloženým v databázi
+    4) pokud vše sedí, vytvoří session a uživatele přihlásí
   -->
+
   <div class="card">
+    {# celý obsah stránky je zabalený do karty #}
+
     <h1>Přihlášení</h1>
+    {# hlavní nadpis stránky #}
+
     <p>Vlož své přihlašovací údaje.</p>
+    {# krátký text pod nadpisem #}
 
     <form class="form" method="POST" action="{{ url_for('login') }}">
+      {# formulář pro přihlášení
+         class="form" používá styly z style.css
+         method="POST" je správně, protože posíláme data na server
+         action="{{ url_for('login') }}" znamená, že se data odešlou na Flask route login #}
+
       <div>
+        {# blok pro pole uživatelského jména #}
+
         <label for="username">Uživatelské jméno</label>
-        <input id="username" name="username" type="text" placeholder="např. admin" required>
+        {# textový popisek pro input #}
+
+        <input
+          id="username"
+          name="username"
+          type="text"
+          placeholder="např. admin"
+          required
+        >
+        {# pole pro uživatelské jméno
+           id propojuje input s labelem
+           name="username" je důležité pro backend, podle toho Flask načte hodnotu
+           type="text" = obyčejné textové pole
+           placeholder je jen ukázka
+           required znamená, že pole musí být vyplněné #}
       </div>
 
       <div>
+        {# blok pro heslo #}
+
         <label for="password">Heslo</label>
-        <input id="password" name="password" type="password" placeholder="••••••••" required>
+        {# popisek k poli hesla #}
+
+        <input
+          id="password"
+          name="password"
+          type="password"
+          placeholder="••••••••"
+          required
+        >
+        {# pole pro heslo
+           type="password" skryje znaky při psaní
+           name="password" je název, pod kterým backend přečte heslo
+           required = povinné pole #}
       </div>
 
       <button class="btn" type="submit">Přihlásit</button>
+      {# tlačítko pro odeslání formuláře #}
     </form>
 
     <p style="margin-top: 12px;">
       Nemáš účet? <a href="{{ url_for('register') }}">Zaregistruj se</a>
     </p>
+    {# odkaz na registrační stránku
+       url_for('register') vytvoří správnou adresu na Flask route register #}
   </div>
+  {# konec karty #}
+
 {% endblock %}
+{# konec content bloku #}

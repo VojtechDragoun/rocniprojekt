@@ -2,156 +2,229 @@
 init_db.py
 ==========
 
-Co to dělá:
-1) Vytvoří (nebo aktualizuje) databázi rccar.db podle schema.sql
-2) Vloží ukázková data (min. 3 záznamy do každé tabulky):
-   - 3 uživatele (hash hesla přes werkzeug)
-   - 3 auta
-   - 3 jízdy (včetně jedné nedokončené s duration_sec = NULL)
+Tenhle soubor slouží k vytvoření databáze a vložení ukázkových dat.
 
-Jak spustit (Windows):
-  cd rccar
-  py -m venv .venv
-  .venv\\Scripts\\activate
-  pip install flask
+Co dělá:
+1) načte schema.sql
+2) vytvoří tabulky v SQLite databázi
+3) vloží demo data:
+   - 3 uživatele
+   - 3 auta
+   - 3 jízdy
+
+Použití:
+- hodí se hlavně na začátku projektu
+- po spuštění bude aplikace hned mít s čím pracovat
+- backend (např. app.py) pak může z této databáze číst
+
+Spuštění:
   py database\\init_db.py
 """
 
-from __future__ import annotations
-
 import sqlite3
+# vestavěná knihovna Pythonu pro práci se SQLite databází
+
 from pathlib import Path
+# Path je pohodlnější způsob práce s cestami k souborům a složkám
 
 from werkzeug.security import generate_password_hash
+# funkce pro vytvoření hashe hesla
+# díky tomu nejsou hesla uložená přímo jako obyčejný text
 
 
-# ------------------------------------------------------------
-# Cesty
-# ------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parent.parent   # .../rccar
-DB_DIR = PROJECT_ROOT / "database"
+# -------------------------------------------------
+# CESTY K SOUBORŮM
+# -------------------------------------------------
+
+# __file__ = cesta k tomuto souboru
+# .resolve() = převede na absolutní cestu
+# .parent.parent = posune se o 2 úrovně výš:
+# database/init_db.py -> database -> root projektu
+ROOT = Path(__file__).resolve().parent.parent
+
+# cesta ke složce database
+DB_DIR = ROOT / "database"
+
+# cesta k SQLite databázi
 DB_PATH = DB_DIR / "rccar.db"
-SCHEMA_PATH = DB_DIR / "schema.sql"
+
+# cesta k SQL souboru se strukturou databáze
+SCHEMA = DB_DIR / "schema.sql"
 
 
-# ------------------------------------------------------------
-# DB helper
-# ------------------------------------------------------------
-def connect() -> sqlite3.Connection:
+# -------------------------------------------------
+# PŘIPOJENÍ K DATABÁZI
+# -------------------------------------------------
+
+def connect():
+    # vytvoří připojení k databázi
+    # pokud soubor rccar.db ještě neexistuje, SQLite ho vytvoří
     conn = sqlite3.connect(DB_PATH)
+
+    # díky row_factory můžeme pak číst výsledek třeba jako row["id"]
+    # místo row[0], což je přehlednější
     conn.row_factory = sqlite3.Row
+
+    # zapnutí foreign keys
+    # ve SQLite nejsou vždy aktivní automaticky
     conn.execute("PRAGMA foreign_keys = ON;")
+
     return conn
 
 
-def apply_schema(conn: sqlite3.Connection) -> None:
-    if not SCHEMA_PATH.exists():
-        raise FileNotFoundError(f"Chybí schema.sql: {SCHEMA_PATH}")
+# -------------------------------------------------
+# NAČTENÍ A PROVEDENÍ SCHEMA.SQL
+# -------------------------------------------------
 
-    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    conn.executescript(schema_sql)
+def apply_schema(conn):
+    # nejdřív zkontrolujeme, jestli schema.sql opravdu existuje
+    if not SCHEMA.exists():
+        raise Exception("schema.sql nenalezen")
+
+    # načtení celého obsahu souboru schema.sql do proměnné
+    sql = SCHEMA.read_text(encoding="utf-8")
+
+    # executescript umí spustit více SQL příkazů najednou
+    # takže se hodí na celé schema.sql
+    conn.executescript(sql)
 
 
-def seed_data(conn: sqlite3.Connection) -> None:
-    """
-    Vloží 3 záznamy do každé tabulky, ale tak,
-    aby se data nevkládala znovu při opakovaném spuštění.
+# -------------------------------------------------
+# VLOŽENÍ UKÁZKOVÝCH DAT
+# -------------------------------------------------
 
-    Používáme INSERT OR IGNORE tam, kde máme UNIQUE.
-    """
+def seed(conn):
 
-    # -----------------------------
-    # 1) USERS (3 záznamy)
-    # -----------------------------
-    # Hesla pro demo:
-    # - vojtěch / Vojtech123
-    # - admin   / Admin123
-    # - pepa    / Pepa123
-    demo_users = [
+    # -------------------
+    # USERS
+    # -------------------
+
+    # připravíme si 3 uživatele
+    # hesla se neukládají přímo, ale jako hash
+    # role je buď user nebo admin
+    users = [
         ("vojtech", generate_password_hash("Vojtech123"), "user"),
         ("admin", generate_password_hash("Admin123"), "admin"),
         ("pepa", generate_password_hash("Pepa123"), "user"),
     ]
 
-    for username, pw_hash, role in demo_users:
+    # projdeme všechny uživatele a vložíme je do tabulky users
+    for u in users:
         conn.execute(
-            """
-            INSERT OR IGNORE INTO users (username, password_hash, role)
-            VALUES (?, ?, ?);
-            """,
-            (username, pw_hash, role),
+            "INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?);",
+            u
         )
+        # INSERT OR IGNORE znamená:
+        # když už tam takový záznam je (např. stejný username),
+        # tak se nevloží znovu a nevznikne chyba
 
-    # -----------------------------
-    # 2) CARS (3 záznamy)
-    # -----------------------------
-    demo_cars = [
+    # -------------------
+    # CARS
+    # -------------------
+
+    # připravíme si 3 auta
+    # sloupce znamenají:
+    # - name = název auta
+    # - power_limit_percent = omezení výkonu v procentech
+    # - steer_angle_deg = úhel zatáčení
+    cars = [
         ("Auto 1", 10, 45),
         ("Auto 2", 20, 40),
         ("Auto 3", 30, 35),
     ]
 
-    for name, power, angle in demo_cars:
+    # vložení aut do tabulky cars
+    for c in cars:
         conn.execute(
-            """
-            INSERT OR IGNORE INTO cars (name, power_limit_percent, steer_angle_deg)
-            VALUES (?, ?, ?);
-            """,
-            (name, power, angle),
+            "INSERT OR IGNORE INTO cars (name, power_limit_percent, steer_angle_deg) VALUES (?, ?, ?);",
+            c
         )
 
-    # -----------------------------
-    # 3) RIDES (3 záznamy)
-    # -----------------------------
-    # Abychom mohli vložit rides, potřebujeme reálné user_id a car_id.
-    # Vezmeme si je SELECTem podle username a car name.
+    # -------------------
+    # RIDES
+    # -------------------
 
-    u_vojtech = conn.execute("SELECT id FROM users WHERE username = 'vojtech';").fetchone()
-    u_admin = conn.execute("SELECT id FROM users WHERE username = 'admin';").fetchone()
-    u_pepa = conn.execute("SELECT id FROM users WHERE username = 'pepa';").fetchone()
+    # u rides potřebujeme skutečná user_id a car_id,
+    # protože rides odkazuje na users a cars přes cizí klíče
 
-    c1 = conn.execute("SELECT id FROM cars WHERE name = 'Auto 1';").fetchone()
-    c2 = conn.execute("SELECT id FROM cars WHERE name = 'Auto 2';").fetchone()
-    c3 = conn.execute("SELECT id FROM cars WHERE name = 'Auto 3';").fetchone()
+    # načtení id uživatelů
+    u1 = conn.execute("SELECT id FROM users WHERE username='vojtech'").fetchone()
+    u2 = conn.execute("SELECT id FROM users WHERE username='admin'").fetchone()
+    u3 = conn.execute("SELECT id FROM users WHERE username='pepa'").fetchone()
 
-    if not (u_vojtech and u_admin and u_pepa and c1 and c2 and c3):
-        raise RuntimeError("Seed selhal: nenašel se user/car po INSERTu.")
+    # načtení id aut
+    c1 = conn.execute("SELECT id FROM cars WHERE name='Auto 1'").fetchone()
+    c2 = conn.execute("SELECT id FROM cars WHERE name='Auto 2'").fetchone()
+    c3 = conn.execute("SELECT id FROM cars WHERE name='Auto 3'").fetchone()
 
-    # Aby se rides neduplikovaly při každém spuštění, vložíme je jen pokud
-    # v tabulce rides zatím nejsou žádná data.
-    rides_count = conn.execute("SELECT COUNT(*) AS n FROM rides;").fetchone()["n"]
-    if rides_count == 0:
-        # 2 dokončené jízdy + 1 nedokončená (duration_sec = NULL)
+    # když by některý user nebo car neexistoval,
+    # znamená to, že se předchozí data nevložila správně
+    if not (u1 and u2 and u3 and c1 and c2 and c3):
+        raise Exception("něco se nevložilo")
+
+    # zjistíme, kolik záznamů už je v rides
+    count = conn.execute("SELECT COUNT(*) as n FROM rides").fetchone()["n"]
+
+    # rides vložíme jen tehdy, když je tabulka zatím prázdná
+    # aby se při každém spuštění nepřidávaly další a další jízdy
+    if count == 0:
+        # 1. dokončená jízda
+        # user vojtech jel s autem Auto 1 po dobu 120 sekund
         conn.execute(
             "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, ?);",
-            (int(u_vojtech["id"]), int(c1["id"]), 120),
+            (u1["id"], c1["id"], 120)
         )
+
+        # 2. dokončená jízda
+        # admin jel s autem Auto 2 po dobu 75 sekund
         conn.execute(
             "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, ?);",
-            (int(u_admin["id"]), int(c2["id"]), 75),
+            (u2["id"], c2["id"], 75)
         )
+
+        # 3. nedokončená jízda
+        # duration_sec je NULL
+        # to může znamenat třeba jízdu, která ještě probíhá,
+        # nebo nemá uložený konečný čas
         conn.execute(
             "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, NULL);",
-            (int(u_pepa["id"]), int(c3["id"])),
+            (u3["id"], c3["id"])
         )
 
 
-def main() -> None:
+# -------------------------------------------------
+# HLAVNÍ FUNKCE
+# -------------------------------------------------
+
+def main():
+    # když složka database neexistuje, vytvoří se
     DB_DIR.mkdir(exist_ok=True)
 
+    # připojení k databázi
     conn = connect()
+
+    # vytvoření tabulek podle schema.sql
     apply_schema(conn)
-    seed_data(conn)
+
+    # vložení demo dat
+    seed(conn)
+
+    # uložení všech změn
     conn.commit()
+
+    # zavření databázového spojení
     conn.close()
 
-    print("✅ DB vytvořena/aktualizována:", DB_PATH)
-    print("✅ Vložena demo data (3 users, 3 cars, 3 rides).")
-    print("Demo login:")
-    print("- vojtěch: username=vojtech, heslo=Vojtech123")
-    print("- admin:   username=admin,   heslo=Admin123")
-    print("- pepa:    username=pepa,    heslo=Pepa123")
+    # výpis do konzole, aby bylo vidět, že vše proběhlo správně
+    print("DB ready")
+    print("login:")
+    print("vojtech / Vojtech123")
+    print("admin / Admin123")
+    print("pepa / Pepa123")
 
 
+# tento blok zajistí, že se main() spustí jen tehdy,
+# když se soubor spustí přímo
+# ne když bude jen importovaný z jiného souboru
 if __name__ == "__main__":
     main()
