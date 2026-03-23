@@ -1,36 +1,217 @@
+# RC Car Project
+
+Popis projektu
+Tento projekt umožňuje ovládání RC auta přes webovou aplikaci.
+
+- Backend běží na Flasku (Python)
+- Komunikace probíhá mezi webem a Arduinem přes USB (serial)
+- Arduino ovládá:
+  - motor (pohon)
+  - servo (zatáčení)
+
+Uživatel se přihlásí do aplikace a následně může auto ovládat přes dashboard pomocí klávesnice.
+
+---
+
+Instalace
+
+Instalace Python knihoven
+
 pip install flask
 pip install pytest
-pip install pyserial     | Instalace knihovny
+pip install pyserial
 
-kód z car.ino se musí zkopírovat a poslat např přes arduino ide do arduina před spuštěním stránky
-musí se vybrat COM port , do kterého je připojené arduino přes usb a pak to do arduina nahrát
-Arduino a servo k němu se musí zapojit podle schématu, které je ve složce docs ve složce v projektu
-Stránka se spoští přes soubor app.py, který je ve složce web, která je ve složce projektu rccar.
-Po spuštění app.py se vygeneruje odkaz na stránku.
-V navbaru je jsou odkazy na další stránky, domů - domovská stránka; dashboard - ovládání auta (motorů) ; info - informace o projektu, admin pro admina.
-V navbaru je také dropdown menu, kde je přihlášení a registrace. (admin login ) Uživatelské jméno: vd ; heslo:12345
-Úspěšná registrace se zapíše i s zahashovaným heslem do databáze rccar.db, která je ve složce database, která je ve složce projektu.
-Složka database také obsahuje init_db.py, který je pro znovuvytvoření tabulek, ale tabulky budou prázdné.
-po přihlášení, jako uživatel nebo admin se zpřístupní stránka dash board, kde se pomocí kláves/ stisknutí talčítka ovládá auto(motory od auta - pohon "W" a zatáčení pomocí serva "A" nebo "D")
-Testy se spouští pytest
-Jazyky
-- Python – backend (Flask server + práce s databází)
-- HTML – frontend šablony 
-- CSS – stylování společné pro všechny stránky 
-- SQL – databázové schéma 
-- c++ - ovládání arduina
+Arduino část
+
+Je potřeba:
+
+Mít nainstalovaný program Arduino IDE
+Také je potřeba mít stáhnutou knihovnu Servo pro Arduino
+
+Nahrání kódu do Arduino desky
+
+Postup:
+1. Otevři soubor car.ino a zkopíruj kód do Arduino IDE
+2. Připoj Arduino k PC přes USB
+3. Vyber COM port, kam je Arduino připojené
+4. Nahraj kód do Arduino
+
+Důležité:
+Arduino musí být připojené k PC ještě před spuštěním webu.
+
+---
+
+Zapojení
+
+Arduino + motor a servo musí být zapojené podle schématu:
+/docs/ (viz schéma zapojení)
+
+---
+
+Spuštění aplikace
+
+Aplikace se spouští ze složky:
+/web/app.py
+
+Spuštění:
+python app.py
+
+Po spuštění se v konzoli zobrazí odkaz (např. http://127.0.0.1:5000)
+
+---
+
+Webové rozhraní
+
+Navigace (navbar):
+Domů – hlavní stránka
+Dashboard – ovládání auta
+Info – informace o projektu
+Admin – správa (jen pro admina)
+
+---
+
+Přihlášení
+
+Admin účet:
+Uživatelské jméno: admin
+Heslo: Admin123
+
+---
+
+Funkce aplikace
+
+- registrace uživatele
+- přihlášení / odhlášení
+- role:
+    user
+    admin
+- dashboard dostupný pouze po přihlášení
+- admin má přístup k rozšířeným funkcím (mazání v databázi)
+
+---
+
+Ovládání auta
+
+Na stránce dashboard:
+
+W  pohyb dopředu
+A  zatáčení doleva
+D  zatáčení doprava
+
+---
 
 Databáze
-- SQLite – lokální souborová databáze Uživatelské jméno
 
-Standardní knihovny Pythonu 
-- sqlite3 – práce se SQLite databází
-- pathlib – cesty k souborům
-- typing – xxxx
+Použitá databáze:
+SQLite (rccar.db)
 
-Flask - je potřeba stáhnout
-- Werkzeug 
-- Jinja2 
+Umístění:
+/database/rccar.db
+
+Obsah:
+- uživatelé (včetně hashovaných hesel)
+- data aplikace
+
+---
+
+Inicializace databáze
+
+Soubor:
+/database/init_db.py
+
+Spuštění:
+python init_db.py
+
+Tím se vytvoří nové tabulky (původní data budou smazána).
+
+---
+
+Použité technologie
+
+Backend
+- Python (Flask)
+- SQLite
+
+Frontend
+- HTML (Jinja2 šablony)
+- CSS
+
+Hardware
+- Arduino (C++)
+- Servo + motor
+
+---
+
+Použité knihovny
+
+Python
+- flask – webový server
+- pyserial – komunikace s Arduinem
+- pytest – testování
+
+Flask závislosti
+- Werkzeug
+- Jinja2
 - ItsDangerous
-- Click 
+- Click
 - Blinker
+
+Standardní knihovny
+- sqlite3 – databáze
+- pathlib – práce s cestami
+- typing – typování
+
+---
+
+Struktura projektu
+
+rccar/
+│
+├── arduino/
+│   └── car/
+│       └── car.ino
+│
+├── database/
+│   ├── init_db.py
+│   ├── rccar.db
+│   └── schema.sql
+│
+├── docs/
+│   ├── ER_diagram.drawio
+│   ├── ER_diagram.drawio.bkp
+│   └── Schéma k zapojení servo motoru a arduino.png
+│
+├── web/
+│   ├── __pycache__/
+│   │   └── arduino_comm.cpython-313.pyc
+│   │
+│   ├── static/
+│   │   ├── style.css
+│   │   └── images/
+│   │       └── er_diagram.png
+│   │
+│   ├── templates/
+│   │   ├── base.html
+│   │   ├── index.html
+│   │   ├── login.html
+│   │   ├── register.html
+│   │   ├── dashboard.html
+│   │   ├── admin.html
+│   │   └── info.html
+│   │
+│   ├── app.py
+│   └── arduino_comm.py
+│
+└── README.md
+
+---
+
+Autor
+Vojtěch Dragoun
+
+---
+
+Poznámky
+
+Projekt vyžaduje připojené Arduino během běhu.
+Bez Arduino nebude ovládání funkční.
