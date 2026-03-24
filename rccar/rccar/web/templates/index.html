@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{# tenhle template dědí z base.html
+   takže navbar, základ stránky a css už jsou řešené tam #}
+
+{% block title %}RCcar – Hlavní stránka{% endblock %}
+{# název stránky v záložce prohlížeče #}
+
+{% block content %}
+  {# začátek hlavního obsahu stránky #}
+
+  <!--
+    index.html
+    ----------
+    Hlavní stránka projektu.
+
+    Tato stránka stručně vysvětluje, o čem projekt je,
+    a odkazuje na dashboard a info stránku.
+  -->
+
+  <div class="card">
+    {# obsah je uvnitř karty #}
+
+    <h1>RCcar – ovládání autíčka přes USB a webové rozhraní</h1>
+    {# hlavní nadpis stránky #}
+
+    <p>
+      Tento projekt propojuje Flask webovou aplikaci, SQLite databázi a Arduino,
+      které je připojené k počítači přes USB kabel.
+    </p>
+    {# stručný popis hlavních částí projektu #}
+
+    <p>
+      Přes webové rozhraní lze ovládat zatáčení serva a motor autíčka.
+      Příkazy se z webu posílají do Python backendu a ten je přes sériovou komunikaci
+      odesílá do Arduina.
+    </p>
+    {# vysvětlení, jak funguje ovládání #}
+
+    <p>
+      Na dashboardu je možné autíčko ovládat a zároveň zobrazit uložené jízdy
+      z databáze.
+    </p>
+    {# informace o dashboardu #}
+
+    <a class="btn" href="{{ url_for('dashboard') }}">Otevřít dashboard</a>
+    {# tlačítko na dashboard #}
+
+    <a class="btn" href="{{ url_for('info') }}" style="margin-left: 8px;">Info o projektu</a>
+    {# tlačítko na info stránku #}
+  </div>
+  {# konec karty #}
+
+{% endblock %}
+{# konec content bloku #}
