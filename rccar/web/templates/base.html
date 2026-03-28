@@ -5,48 +5,48 @@
 <!-- jazyk stránky je čeština -->
 
 <head>
-  <!-- nastavení znakové sady -->
+  <!-- znaková sada UTF-8, aby fungovala čeština správně -->
   <meta charset="UTF-8" />
 
-  <!-- správné zobrazení na mobilu a menších obrazovkách -->
+  <!-- správné škálování na mobilech a menších displejích -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- title je udělaný jako Jinja block,
-       takže si ho každá stránka může změnit sama -->
+  <!-- title je blok,
+       takže si ho každá stránka může změnit podle sebe -->
   <title>{% block title %}RCcar{% endblock %}</title>
 
   <!-- načtení hlavního CSS souboru -->
-  <!-- url_for('static', ...) je Flask způsob, jak správně načíst statický soubor -->
+  <!-- url_for('static', ...) je správný Flask způsob načítání statických souborů -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
 
-  <!-- ----------------------------------------
+  <!-- ------------------------------------------------------
        NAVBAR
-       ----------------------------------------
-       horní navigace, která bude na všech stránkách,
-       protože base.html je společná šablona
+       ------------------------------------------------------
+       Tohle je společná horní navigace pro celý web.
+       Proto je v base.html, aby nemusela být na každé stránce zvlášť.
   -->
   <header class="navbar">
     <div class="navbar-inner">
 
-      <!-- název / logo projektu -->
+      <!-- název projektu / logo -->
       <a class="brand" href="{{ url_for('index') }}">RCcar</a>
 
-      <!-- hlavní navigační odkazy -->
+      <!-- hlavní navigace -->
       <nav class="nav-links">
-        <!-- odkaz na domovskou stránku -->
+        <!-- domovská stránka -->
         <a href="{{ url_for('index') }}">Domů</a>
 
-        <!-- odkaz na info stránku -->
+        <!-- info stránka -->
         <a href="{{ url_for('info') }}">Info</a>
 
-        <!-- odkaz na dashboard -->
+        <!-- dashboard -->
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
 
         {% if user and user.role == 'admin' %}
-          <!-- odkaz na admin stránku se zobrazí jen adminovi -->
+          <!-- admin odkaz se zobrazí jen přihlášenému adminovi -->
           <a href="{{ url_for('admin') }}">Admin</a>
         {% endif %}
       </nav>
@@ -60,27 +60,26 @@
           <span style="color:#cbd5e1;">
             Přihlášen jako <b>{{ user.username }}</b> ({{ user.role }})
           </span>
-          <!-- zobrazení jména a role uživatele
-               proměnná user je typicky poslaná z Flasku -->
+          <!-- zobrazení jména a role aktuálního uživatele -->
 
           <a class="btn" href="{{ url_for('logout') }}" style="margin-left:10px;">Odhlásit</a>
-          <!-- odkaz na logout -->
+          <!-- odkaz na odhlášení -->
 
         {% else %}
-          <!-- když uživatel není přihlášený -->
+          <!-- když uživatel přihlášený není -->
 
           <div class="dropdown" tabindex="0">
             <!-- dropdown menu pro účet
-                 tabindex="0" dovolí focus i klávesnicí -->
+                 tabindex="0" umožní focus i klávesnicí -->
 
             <button class="dropdown-btn" type="button">Účet ▾</button>
-            <!-- tlačítko dropdownu -->
+            <!-- tlačítko, které otevírá menu -->
 
             <div class="dropdown-menu">
-              <!-- odkaz na login -->
+              <!-- přihlášení -->
               <a href="{{ url_for('login') }}">Přihlásit</a>
 
-              <!-- odkaz na registraci -->
+              <!-- registrace -->
               <a href="{{ url_for('register') }}">Registrovat</a>
             </div>
           </div>
@@ -90,15 +89,19 @@
   </header>
 
 
-  <!-- ----------------------------------------
+  <!-- ------------------------------------------------------
        FLASH ZPRÁVY
-       ----------------------------------------
-       Flask umí posílat jednorázové zprávy pomocí flash(),
-       např. po loginu, registraci nebo chybě
+       ------------------------------------------------------
+       Flask umí jednorázové zprávy přes flash().
+       Typicky se používají po:
+       - loginu
+       - registraci
+       - chybě
+       - smazání dat
   -->
   <div class="container" style="padding-top: 12px; padding-bottom: 0;">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      <!-- načtení flash zpráv i s kategorií, např. success / error / info -->
+      <!-- načtení flash zpráv i s kategoriemi -->
 
       {% if messages %}
         <!-- když nějaké zprávy existují -->
@@ -114,11 +117,11 @@
   </div>
 
 
-  <!-- ----------------------------------------
+  <!-- ------------------------------------------------------
        HLAVNÍ OBSAH STRÁNKY
-       ----------------------------------------
-       sem se vkládá obsah konkrétní stránky,
-       třeba index.html, admin.html, login.html atd.
+       ------------------------------------------------------
+       Sem se vloží konkrétní obsah stránky,
+       třeba index.html, dashboard.html, admin.html atd.
   -->
   <main class="container">
     {% block content %}{% endblock %}

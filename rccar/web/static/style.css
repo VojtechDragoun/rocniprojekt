@@ -4,8 +4,8 @@
 
    Globální CSS pro celý web projektu RCcar.
 
-   Tenhle soubor se používá na více stránkách,
-   takže obsahuje hlavně společné styly:
+   Tento soubor se načítá na více stránkách,
+   takže obsahuje společné styly pro celý web:
    - základ stránky
    - navbar
    - dropdown menu
@@ -15,14 +15,18 @@
    - tabulky
    - flash zprávy
 
-   Ve Flasku se statické soubory dávají do /static,
-   takže se obvykle načítá třeba takto:
-   {{ url_for('static', filename='css/style.css') }}
+   Ve Flasku se statické soubory načítají přes:
+   {{ url_for('static', filename='style.css') }}
 -------------------------------------------------------- */
 
 
-/* základní reset pro všechny elementy
-   odstraní výchozí margin/padding a sjednotí box model */
+/* -------------------------------------------------------
+   GLOBÁLNÍ RESET
+-------------------------------------------------------- */
+
+/* reset pro všechny elementy
+   odstraní výchozí margin a padding
+   a sjednotí box model */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -30,29 +34,32 @@
 }
 
 
-/* základní vzhled celé stránky */
+/* -------------------------------------------------------
+   ZÁKLAD STRÁNKY
+-------------------------------------------------------- */
+
 body {
-  /* systémové fonty – rychlé a vypadají dobře */
+  /* systémové fonty jsou rychlé a vypadají dobře */
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 
   /* tmavé pozadí celého webu */
   background: #0f172a;
 
-  /* světlá barva textu */
+  /* základní barva textu */
   color: #e2e8f0;
 
-  /* minimální výška stránky = aspoň celá výška obrazovky */
+  /* stránka bude mít aspoň výšku celé obrazovky */
   min-height: 100vh;
 }
 
 
-/* kontejner pro hlavní obsah
-   omezuje maximální šířku, aby text a prvky nebyly moc roztahané */
+/* hlavní kontejner obsahu
+   omezí maximální šířku a vystředí obsah */
 .container {
-  /* buď max 1100px, nebo 92 % šířky obrazovky */
+  /* buď maximálně 1100px, nebo 92 % šířky */
   width: min(1100px, 92%);
 
-  /* vystředění na stránce */
+  /* vystředění */
   margin: 0 auto;
 
   /* mezera nahoře a dole */
@@ -60,9 +67,9 @@ body {
 }
 
 
-/* nadpisy */
+/* základní styly nadpisů */
 h1, h2, h3 {
-  /* menší řádkování, aby nadpisy byly kompaktnější */
+  /* menší řádkování nadpisů */
   line-height: 1.2;
 
   /* mezera pod nadpisem */
@@ -70,54 +77,52 @@ h1, h2, h3 {
 }
 
 
-/* obyčejný text v odstavcích */
+/* základní styl odstavců */
 p {
-  /* pohodlnější čtení */
+  /* lepší čitelnost textu */
   line-height: 1.6;
 
   /* mezera pod odstavcem */
   margin-bottom: 12px;
 
-  /* lehce tlumenější barva než hlavní text */
+  /* lehce tlumenější text */
   color: #cbd5e1;
 }
 
 
 /* -------------------------------------------------------
    NAVBAR
-   -------------------------------------------------------
-
-   Společná horní navigace pro všechny stránky.
-   Je "sticky", takže zůstává nahoře i při scrollování.
 -------------------------------------------------------- */
+
+/* horní navigační lišta */
 .navbar {
   /* tmavé poloprůhledné pozadí */
   background: rgba(2, 6, 23, 0.85);
 
-  /* jemná spodní linka */
+  /* spodní linka */
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 
-  /* navbar zůstane nahoře při scrollu */
+  /* navbar zůstává nahoře i při scrollování */
   position: sticky;
   top: 0;
 
   /* rozmazání pozadí pod navbar */
   backdrop-filter: blur(10px);
 
-  /* aby byl nad ostatním obsahem */
+  /* vyšší vrstva než zbytek stránky */
   z-index: 50;
 }
 
 
-/* vnitřní část navbaru */
+/* vnitřní kontejner navbaru */
 .navbar-inner {
-  /* podobné omezení šířky jako container */
+  /* podobná šířka jako hlavní container */
   width: min(1100px, 92%);
 
   /* vystředění */
   margin: 0 auto;
 
-  /* flex pro rozložení prvků vedle sebe */
+  /* rozložení prvků vedle sebe */
   display: flex;
   align-items: center;
 
@@ -129,9 +134,9 @@ p {
 }
 
 
-/* logo / název projektu */
+/* značka / název projektu */
 .brand {
-  /* tučnější text */
+  /* výraznější text */
   font-weight: 800;
 
   /* lehké roztažení písmen */
@@ -145,13 +150,13 @@ p {
 }
 
 
-/* blok s hlavními odkazy v navigaci */
+/* blok hlavních odkazů v navbaru */
 .nav-links {
   display: flex;
   align-items: center;
   gap: 14px;
 
-  /* malý odstup od brandu */
+  /* odstup od názvu projektu */
   margin-left: 10px;
 }
 
@@ -161,9 +166,8 @@ p {
   color: #cbd5e1;
   text-decoration: none;
 
-  /* vnitřní odsazení, aby odkaz vypadal jako tlačítko */
+  /* aby odkazy vizuálně připomínaly tlačítka */
   padding: 8px 10px;
-
   border-radius: 10px;
 
   /* plynulý hover efekt */
@@ -179,9 +183,9 @@ p {
 
 
 /* pravá část navbaru
-   typicky login/register nebo info o uživateli */
+   typicky login / registrace nebo jméno uživatele */
 .nav-right {
-  /* pošle blok doprava */
+  /* posune blok až doprava */
   margin-left: auto;
 
   display: flex;
@@ -192,13 +196,11 @@ p {
 
 /* -------------------------------------------------------
    DROPDOWN MENU
-   -------------------------------------------------------
-
-   Jednoduché CSS dropdown menu bez JavaScriptu.
-   Otevírá se při hover nebo focus-within.
 -------------------------------------------------------- */
+
+/* obal dropdownu */
 .dropdown {
-  /* nutné kvůli absolutnímu pozicování menu */
+  /* nutné pro absolutní pozici menu */
   position: relative;
 }
 
@@ -218,20 +220,20 @@ p {
 }
 
 
-/* hover efekt na tlačítku */
+/* hover efekt tlačítka */
 .dropdown-btn:hover {
   background: rgba(148, 163, 184, 0.18);
 }
 
 
-/* samotné rozbalené menu */
+/* rozbalené menu dropdownu */
 .dropdown-menu {
   position: absolute;
 
   /* zarovnání doprava vůči rodiči */
   right: 0;
 
-  /* trochu pod tlačítkem */
+  /* trochu níž pod tlačítkem */
   top: calc(100% + 10px);
 
   width: 180px;
@@ -242,15 +244,15 @@ p {
 
   padding: 8px;
 
-  /* ve výchozím stavu schované */
+  /* výchozí stav = schované */
   display: none;
 
-  /* stín pod menu */
+  /* stín pro oddělení od pozadí */
   box-shadow: 0 12px 30px rgba(0,0,0,0.35);
 }
 
 
-/* odkazy uvnitř dropdownu */
+/* odkazy uvnitř dropdown menu */
 .dropdown-menu a {
   display: block;
   text-decoration: none;
@@ -267,8 +269,7 @@ p {
 }
 
 
-/* otevření dropdownu při hover nebo focusu
-   focus-within je lepší i pro ovládání klávesnicí */
+/* otevření dropdownu při hover nebo focusu */
 .dropdown:hover .dropdown-menu,
 .dropdown:focus-within .dropdown-menu {
   display: block;
@@ -278,11 +279,13 @@ p {
 /* -------------------------------------------------------
    KARTY
 -------------------------------------------------------- */
+
+/* společný styl karet */
 .card {
   /* lehce průhledné pozadí */
   background: rgba(255, 255, 255, 0.04);
 
-  /* jemné ohraničení */
+  /* jemný rámeček */
   border: 1px solid rgba(148, 163, 184, 0.18);
 
   /* zaoblené rohy */
@@ -291,7 +294,7 @@ p {
   /* vnitřní odsazení */
   padding: 18px;
 
-  /* stín, aby karta trochu vystoupila */
+  /* stín */
   box-shadow: 0 10px 24px rgba(0,0,0,0.25);
 }
 
@@ -299,12 +302,14 @@ p {
 /* -------------------------------------------------------
    TLAČÍTKA
 -------------------------------------------------------- */
+
+/* základní vzhled tlačítek */
 .btn {
   display: inline-block;
 
   border: 1px solid rgba(148, 163, 184, 0.25);
 
-  /* lehce barevné pozadí */
+  /* lehce modrofialové pozadí */
   background: rgba(99, 102, 241, 0.18);
 
   color: #e2e8f0;
@@ -318,7 +323,7 @@ p {
 }
 
 
-/* hover efekt na tlačítku */
+/* hover efekt tlačítka */
 .btn:hover {
   background: rgba(99, 102, 241, 0.28);
 }
@@ -328,9 +333,9 @@ p {
    FORMULÁŘE
 -------------------------------------------------------- */
 
-/* wrapper formuláře */
+/* obal formuláře */
 .form {
-  /* prvky formuláře pod sebou */
+  /* prvky formuláře budou pod sebou */
   display: grid;
 
   /* mezery mezi prvky */
@@ -361,7 +366,7 @@ input {
 }
 
 
-/* zvýraznění inputu při focusu */
+/* zvýraznění při focusu */
 input:focus {
   border-color: rgba(99, 102, 241, 0.65);
 }
@@ -371,7 +376,7 @@ input:focus {
    TABULKY
 -------------------------------------------------------- */
 
-/* tabulka např. pro dashboard */
+/* základní styl tabulek */
 table {
   width: 100%;
 
@@ -407,30 +412,21 @@ th {
 /* -------------------------------------------------------
    FOOTER
 -------------------------------------------------------- */
+
+/* styl footeru, pokud by se později používal */
 .footer {
-  /* jemnější vzhled */
   opacity: 0.85;
-
   font-size: 0.9rem;
-
-  /* mezera nad footrem */
   margin-top: 24px;
-
   color: #94a3b8;
 }
 
 
 /* -------------------------------------------------------
    FLASH ZPRÁVY
-   -------------------------------------------------------
-
-   Používá se třeba ve Flasku pro zprávy jako:
-   - úspěch
-   - chyba
-   - informace
 -------------------------------------------------------- */
 
-/* obal pro více alertů pod sebou */
+/* obal pro více alertů */
 .alerts {
   display: grid;
   gap: 10px;
@@ -438,7 +434,7 @@ th {
 }
 
 
-/* základní vzhled jedné zprávy */
+/* základní vzhled zprávy */
 .alert {
   padding: 12px 14px;
   border-radius: 14px;

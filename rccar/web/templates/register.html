@@ -26,7 +26,7 @@
     4) uložit nového uživatele do databáze
 
     Poznámka:
-    Pro školní projekt je tohle řešení v pohodě.
+    Pro školní projekt je tohle řešení v pořádku.
     V reálné aplikaci by role admin nebyla volně zadávaná uživatelem,
     ale řešila by se bezpečněji pouze na backendu.
   -->
@@ -49,7 +49,6 @@
         {# blok pro uživatelské jméno #}
 
         <label for="username">Uživatelské jméno</label>
-        {# popisek k poli #}
 
         <input
           id="username"
@@ -66,7 +65,6 @@
         {# blok pro heslo #}
 
         <label for="password">Heslo</label>
-        {# popisek pole hesla #}
 
         <input
           id="password"
@@ -75,31 +73,24 @@
           placeholder="••••••••"
           required
         >
-        {# pole pro heslo
-           type="password" skryje znaky
-           heslo by se pak na backendu mělo zahashovat #}
+        {# heslo se na backendu zahashuje před uložením #}
       </div>
 
       <div>
         {# blok pro roli #}
 
         <label for="role">Role (jednoduché řešení)</label>
-        {# popisek k poli role #}
 
         <!--
           Tohle je jednoduché řešení pro školní projekt.
 
-          Uživatel může zadat roli ručně, např.:
+          Uživatel může ručně zadat třeba:
           - user
           - admin
 
-          Správnější by bylo použít třeba <select>
-          a hlavně kontrolovat hodnotu na backendu.
-
-          V reálné aplikaci by si uživatel admina sám nevybíral,
-          ale tady je to zjednodušené kvůli projektu.
+          Správnější by v praxi bylo použít select
+          a hlavně roli kontrolovat bezpečně na backendu.
         -->
-
         <input
           id="role"
           name="role"
@@ -107,8 +98,6 @@
           placeholder="user / admin"
           required
         >
-        {# textové pole pro roli
-           backend by měl zkontrolovat, že je hodnota povolená #}
       </div>
 
       <button class="btn" type="submit">Registrovat</button>
@@ -123,4 +112,3 @@
   {# konec karty #}
 
 {% endblock %}
-{# konec content bloku #}

@@ -23,29 +23,51 @@ Do Arduina pak odejde:
 
 from __future__ import annotations
 # dovolí modernější typové anotace
+# není to nutné pro funkci programu,
+# ale zlepšuje to čitelnost a práci s typy
 
 import time
 # používá se na krátké čekání po otevření portu
+# Arduino se po otevření COM portu často resetuje,
+# takže mu dáme čas naběhnout
 
 from typing import Optional
 # Optional znamená, že proměnná může být buď daného typu, nebo None
+# tady se to hodí pro globální _ser,
+# protože na začátku ještě žádný otevřený serial nemáme
 
 import serial
 # hlavní pyserial knihovna pro sériovou komunikaci
+# přes ni se otevírá COM port a posílají data
 
 import serial.tools.list_ports
 # část pyserial knihovny pro hledání dostupných COM portů
+# díky tomu nemusíme COM port zapisovat ručně natvrdo
 
 
+# ------------------------------------------------------------
+# NASTAVENÍ PŘENOSU
+# ------------------------------------------------------------
+
+BAUD = 115200
 # přenosová rychlost
 # musí souhlasit s tím, co je nastavené v Arduino kódu přes Serial.begin(...)
-BAUD = 115200
+# kdyby se lišila, komunikace by byla rozbitá nebo nečitelná
 
 
+# ------------------------------------------------------------
+# GLOBÁLNÍ ODKAZ NA SERIAL
+# ------------------------------------------------------------
+
+_ser: Optional[serial.Serial] = None
 # sem se uloží otevřený serial port
 # na začátku je None, protože ještě není otevřený
-_ser: Optional[serial.Serial] = None
+# výhoda je, že port nemusíme při každém příkazu otevírat znovu
 
+
+# ------------------------------------------------------------
+# AUTOMATICKÉ HLEDÁNÍ COM PORTU
+# ------------------------------------------------------------
 
 def _auto_find_port() -> str:
     """
@@ -60,38 +82,55 @@ def _auto_find_port() -> str:
     - název portu jako string, např. 'COM3'
     """
 
-    # načte seznam všech dostupných portů
     ports = list(serial.tools.list_ports.comports())
+    # načte seznam všech dostupných COM portů v systému
+    # každý port má různé informace:
+    # - device (např. COM3)
+    # - description
+    # - hwid
 
-    # když není žádný port, vyhodí chybu
     if not ports:
+        # pokud není nalezen vůbec žádný port,
+        # není k čemu se připojit
         raise RuntimeError("Nenalezen žádný COM port (Arduino není připojené?).")
 
-    # sem se budou ukládat porty, které vypadají jako správné
     preferred = []
+    # sem si budeme ukládat porty,
+    # které vypadají jako dobrý kandidát na Arduino
 
-    # projdeme všechny nalezené porty
     for p in ports:
-        # popis portu, např. Arduino Uno / USB Serial apod.
+        # projdeme všechny nalezené porty
+
         desc = (p.description or "").lower()
+        # popis portu jako malá písmena
+        # např. "arduino uno", "usb serial device" apod.
 
-        # hardwarové ID portu
         hwid = (p.hwid or "").lower()
+        # hardwarové ID portu
+        # často obsahuje typ převodníku, třeba CH340 nebo CP210
 
-        # pokud popis nebo hwid obsahuje typické výrazy pro Arduino / převodníky,
-        # bereme ten port jako pravděpodobně správný
         if any(x in desc for x in ["arduino", "ch340", "usb serial", "cp210", "ftdi"]) or any(
             x in hwid for x in ["ch340", "cp210", "ftdi"]
         ):
+            # pokud popis nebo hwid obsahuje typické výrazy
+            # pro Arduino nebo USB-serial převodníky,
+            # bereme tento port jako vhodný
             preferred.append(p.device)
 
-    # když jsme našli nějaké "lepší" kandidáty, vezmeme první z nich
     if preferred:
+        # když jsme našli nějaké "lepší" kandidáty,
+        # vrátíme první z nich
         return preferred[0]
 
-    # když nic nenašlo nic typického, vrátí aspoň první dostupný port
     return ports[0].device
+    # když nic neodpovídá typickým názvům,
+    # vezmeme aspoň první dostupný port
+    # je to nouzové řešení, ale často funguje
 
+
+# ------------------------------------------------------------
+# OTEVŘENÍ / ZNOVUPOUŽITÍ SERIAL PORTU
+# ------------------------------------------------------------
 
 def _get_serial() -> serial.Serial:
     """
@@ -105,34 +144,50 @@ def _get_serial() -> serial.Serial:
 
     global _ser
     # chceme pracovat s globální proměnnou _ser
+    # bez global bychom uvnitř funkce vytvářeli lokální kopii
 
-    # když už serial existuje a je otevřený, jen ho vrátíme
     if _ser is not None and _ser.is_open:
+        # když už serial existuje a je otevřený,
+        # vrátíme ho a nic znovu neotevíráme
         return _ser
 
-    # najdeme vhodný COM port
     port = _auto_find_port()
+    # najdeme vhodný COM port
 
-    # otevření serial portu
     _ser = serial.Serial(port, BAUD, timeout=0.2, write_timeout=0.2)
+    # otevření serial portu
+    # parametry:
+    # - port = např. COM3
+    # - BAUD = rychlost komunikace
+    # - timeout = jak dlouho čekat při čtení
+    # - write_timeout = jak dlouho čekat při zápisu
 
+    time.sleep(2.0)
     # Arduino se po otevření portu často automaticky resetuje
     # proto je potřeba chvíli počkat, než naběhne
-    time.sleep(2.0)
+    # bez tohoto čekání by první příkazy mohly zmizet
 
     try:
-        # vyčištění vstupního bufferu
         _ser.reset_input_buffer()
+        # vyčistí vstupní buffer
+        # aby tam nezůstala stará data
 
-        # vyčištění výstupního bufferu
         _ser.reset_output_buffer()
+        # vyčistí výstupní buffer
+        # aby se neposílalo něco starého
     except Exception:
         # některé implementace nebo situace můžou vyhodit chybu
         # tady to není kritické, takže to jen ignorujeme
         pass
 
     return _ser
+    # vrátíme otevřený serial port,
+    # který se pak použije pro zápis
 
+
+# ------------------------------------------------------------
+# ODESLÁNÍ JEDNOHO ŘÁDKU DO ARDUINA
+# ------------------------------------------------------------
 
 def send_line(line: str) -> None:
     """
@@ -145,17 +200,21 @@ def send_line(line: str) -> None:
       do serialu se odešle "STEER:L\\n"
     """
 
-    # získání otevřeného serial portu
     ser = _get_serial()
+    # získání otevřeného serial portu
+    # buď už otevřeného, nebo nově otevřeného
 
+    msg = (line.strip() + "\n").encode("ascii", errors="ignore")
     # připraví zprávu:
-    # - strip() odstraní mezery a konce řádku kolem textu
+    # - strip() odstraní mezery a konce řádků kolem textu
     # - přidá se "\n", protože Arduino čeká příkaz po řádcích
     # - encode převede text na bytes
-    msg = (line.strip() + "\n").encode("ascii", errors="ignore")
+    # - ascii + errors="ignore" zahodí případné znaky,
+    #   které by nešly korektně poslat
 
-    # odeslání dat do portu
     ser.write(msg)
+    # odeslání dat do portu
 
-    # flush zajistí, že se data opravdu hned pošlou ven
     ser.flush()
+    # flush zajistí, že se data opravdu hned pošlou ven
+    # bez flush by mohla chvíli čekat v bufferu

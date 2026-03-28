@@ -13,7 +13,9 @@ Tenhle soubor řeší hlavně:
 - komunikaci s Arduinem přes serial
 - start a stop jízdy
 - admin sekci a mazání dat
-- ukládání a načítání posledního ovládacího příkazu ze souboru JSON
+- ukládání a načítání času poslední akce ze souboru JSON
+- synchronizaci úhlu zatáčení podle právě vybraného auta
+- změnu hodnoty motoru MOTOR_ON v rozsahu 1200 až 1300
 
 Databáze používá 3 hlavní tabulky:
 - users
@@ -29,24 +31,30 @@ Komunikace s Arduinem je řešená přes soubor arduino_comm.py
 from __future__ import annotations
 # dovolí modernější práci s typy v Pythonu
 # díky tomu můžeme lépe používat anotace návratových typů funkcí
+# v praxi to znamená, že třeba Optional[int] nebo Dict[str, Any]
+# fungují pohodlněji i v novějších stylech psaní kódu
 
 import json
 # práce s JSON soubory
 # tady se používá hlavně pro last_command.json
+# do toho souboru se ukládá čas poslední akce
 
 import logging
 # knihovna pro logování do konzole
 # logy se hodí při testování i při ukázce projektu
+# můžeme v nich sledovat, co backend právě dělá
 
 import sqlite3
 # vestavěná knihovna pro SQLite databázi
+# přes ni čteme a zapisujeme uživatele, auta a jízdy
 
 import sys
 # používá se tady hlavně kvůli stdout pro logging
-# tedy aby se logy vypisovaly do konzole
+# tedy aby se logy vypisovaly do konzole / terminálu
 
 from datetime import datetime
-# používá se pro uložení času posledního příkazu do JSON souboru
+# používá se pro uložení času poslední akce do JSON souboru
+# čas ukládáme jako text ve formátu YYYY-MM-DD HH:MM:SS
 
 from pathlib import Path
 # pohodlná práce s cestami k souborům
@@ -84,80 +92,96 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 # hashování a kontrola hesel
 # hesla se neukládají přímo jako text, ale bezpečně jako hash
+# generate_password_hash() vytvoří hash
+# check_password_hash() porovná zadané heslo s hashem z databáze
 
 
 # ------------------------------------------------------------
 # 0) Arduino bridge
 # ------------------------------------------------------------
-# tady se zkouší načíst modul pro komunikaci s Arduinem
-# když to nepůjde, aplikace pořád poběží, ale bez ovládání hardwaru
-# to je výhodné hlavně při testování webu bez připojeného Arduina
+# Tahle část se snaží načíst modul pro komunikaci s Arduinem.
+# Když import selže, web se úplně nezastaví.
+# Jen si poznamená, že Arduino momentálně není dostupné.
 
 ARDUINO_AVAILABLE = True
 # předpokládáme, že Arduino modul půjde načíst
-# pokud import selže, tahle hodnota se změní na False
+# pokud import selže, přepne se to na False
 
 ARDUINO_IMPORT_ERROR = ""
-# sem se případně uloží text chyby
-# potom se dá zobrazit v dashboardu nebo adminu
+# sem se uloží text chyby importu
+# potom se může zobrazit v dashboardu nebo v adminu
 
 try:
     import arduino_comm  # web/arduino_comm.py
-    # pokud se import povede, můžeme později používat arduino_comm.send_line(...)
-    # samotná komunikace s COM portem tedy není v app.py, ale v odděleném souboru
+    # pokud se import povede, máme k dispozici funkci send_line()
+    # a další logiku z arduino_comm.py
 except Exception as e:
-    # když se import nepovede, aplikace nespadne
-    # jen si poznamená, že Arduino není dostupné
+    # když import selže, aplikace nespadne
+    # jen si uloží, že Arduino není dostupné
     ARDUINO_AVAILABLE = False
     ARDUINO_IMPORT_ERROR = str(e)
     arduino_comm = None  # type: ignore
-    # nastavíme proměnnou aspoň na None, aby existovala i v případě chyby
+    # nastavíme proměnnou aspoň na None,
+    # aby existovala i v případě chyby
 
 
 # ------------------------------------------------------------
 # 1) Cesty k databázi a schema.sql
 # ------------------------------------------------------------
+# Tady si připravíme absolutní cesty k důležitým souborům projektu.
 
-# složka, ve které je app.py
 BASE_DIR = Path(__file__).resolve().parent
-# typicky tedy složka web/
+# složka, ve které je app.py
+# typicky tedy /web
 
-# root projektu = o úroveň výš
 PROJECT_ROOT = BASE_DIR.parent
-# tím se dostaneme na hlavní složku projektu RCcar
+# root projektu = o úroveň výš
+# tím se dostaneme z /web na hlavní složku projektu
 
-# cesta k SQLite databázi
 DB_PATH = PROJECT_ROOT / "database" / "rccar.db"
-# databáze je mimo web/, konkrétně ve složce database/
+# cesta k SQLite databázi
+# databáze je uložená ve složce /database
 
-# cesta k SQL schématu
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
-# schema.sql obsahuje SQL příkazy pro vytvoření tabulek
+# cesta k SQL schématu
+# schema.sql obsahuje CREATE TABLE a indexy
 
 
 # ------------------------------------------------------------
-# 1.1) Cesta k JSON souboru s posledním příkazem
+# 1.1) Cesta k JSON souboru s časem poslední akce
 # ------------------------------------------------------------
-# tenhle soubor slouží jako jednoduché ukládání a načítání dat ze souboru
-# konkrétně se do něj ukládá poslední odeslaný příkaz auta a čas
 
 LAST_COMMAND_PATH = BASE_DIR / "last_command.json"
-# soubor bude uložený přímo vedle app.py ve složce web/
+# soubor je uložený vedle app.py ve složce /web
+# přestože se jmenuje last_command.json,
+# v aktuální verzi už neukládá poslední příkaz,
+# ale jen čas poslední akce
+
+
+# ------------------------------------------------------------
+# 1.2) Výchozí hodnota zapnutí motoru
+# ------------------------------------------------------------
+# tahle hodnota se bude zobrazovat na dashboardu jako předvyplněná
+# a zároveň ji posíláme do Arduina při otevření dashboardu nebo po loginu
+
+DEFAULT_MOTOR_ON_VALUE = 1200
+# základní hodnota pro zapnutí motoru
+# uživatel si ji může změnit v rozsahu 1200 až 1300
 
 
 # ------------------------------------------------------------
 # 2) Flask aplikace
 # ------------------------------------------------------------
 
-# vytvoření Flask app
-# static_folder="static" znamená, že Flask bude hledat statické soubory ve složce static
-# static_url_path="/static" znamená, že se budou načítat přes adresy typu /static/style.css
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+# vytvoření Flask aplikace
+# static_folder="static" znamená, že statické soubory jsou ve složce /web/static
+# static_url_path="/static" znamená, že budou dostupné přes URL /static/...
 
-# tajný klíč pro session
-# session ukládá informace o přihlášeném uživateli
-# v reálné aplikaci by měl být složitější a neměl by být natvrdo v kódu
 app.config["SECRET_KEY"] = "CHANGE_ME_TO_SOMETHING_RANDOM_AND_SECRET"
+# tajný klíč pro session
+# Flask ho používá pro podepisování session cookies
+# v ostrém provozu by měl být dlouhý, náhodný a neveřejný
 
 
 # ------------------------------------------------------------
@@ -166,47 +190,54 @@ app.config["SECRET_KEY"] = "CHANGE_ME_TO_SOMETHING_RANDOM_AND_SECRET"
 
 def setup_logging() -> None:
     # tahle funkce nastaví logování Flask aplikace do konzole
-    # logování je užitečné pro ladění i dokumentaci toho, co aplikace dělá
+    # chceme mít pěkně formátované výpisy o tom,
+    # co aplikace dělá
 
-    # handler bude vypisovat logy do konzole
     handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
+    # StreamHandler vypisuje logy do proudu
+    # tady konkrétně do stdout = terminálu / konzole
 
-    # formát logu
-    # %(asctime)s = čas
-    # %(levelname)s = úroveň logu (INFO/WARNING/ERROR)
-    # %(module)s = modul, odkud log přišel
-    # %(message)s = samotná zpráva
+    handler.setLevel(logging.INFO)
+    # od této úrovně výš se budou zprávy vypisovat
+    # INFO, WARNING, ERROR...
+
     formatter = logging.Formatter(
         "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
     )
+    # formát logu:
+    # - čas
+    # - úroveň
+    # - modul
+    # - samotná zpráva
+
     handler.setFormatter(formatter)
+    # handler bude používat tento formát
 
-    # nastavíme úroveň logování pro Flask app
     app.logger.setLevel(logging.INFO)
+    # nastavíme úroveň logování i pro Flask logger
 
-    # při debug reloadu by se jinak mohlo přidat víc handlerů
-    # a logy by se vypisovaly duplicitně
     if not app.logger.handlers:
         app.logger.addHandler(handler)
+        # přidáme handler jen tehdy,
+        # když tam ještě žádný není
+        # tím se vyhneme duplicitním logům při reloadu
 
 
-# zavolání nastavení logování
 setup_logging()
+# zavoláme nastavení logování hned při startu aplikace
 
-# několik úvodních logů po startu aplikace
-# díky tomu v konzoli hned vidíme, že se app správně spustila
 app.logger.info("Aplikace RCcar startuje.")
 app.logger.info(f"DB_PATH = {DB_PATH}")
 app.logger.info(f"SCHEMA_PATH = {SCHEMA_PATH}")
 app.logger.info(f"LAST_COMMAND_PATH = {LAST_COMMAND_PATH}")
+# úvodní logy nám pomůžou při ladění
+# hned vidíme, s jakými cestami aplikace pracuje
 
 if ARDUINO_AVAILABLE:
-    # když se podařilo načíst Arduino modul
     app.logger.info("Arduino modul byl úspěšně načten.")
 else:
-    # když se nepodařilo
     app.logger.warning(f"Arduino modul není dostupný: {ARDUINO_IMPORT_ERROR}")
+# podle výsledku importu vypíšeme informaci nebo varování
 
 
 # ------------------------------------------------------------
@@ -215,82 +246,79 @@ else:
 
 def get_db_connection() -> sqlite3.Connection:
     # vytvoří nové připojení k SQLite databázi
-    # používá se ve více route i helper funkcích
+    # tuhle funkci používáme téměř všude,
+    # kde potřebujeme sahat do DB
 
     conn = sqlite3.connect(DB_PATH)
+    # otevření připojení k souboru databáze
 
-    # díky row_factory půjdou řádky číst třeba jako row["id"]
-    # bez toho by se muselo přistupovat přes indexy row[0], row[1], ...
     conn.row_factory = sqlite3.Row
+    # díky tomu se výsledky SQL dají číst přes názvy sloupců
+    # např. row["id"] místo row[0]
 
-    # zapnutí cizích klíčů
-    # SQLite je má defaultně vypnuté, takže je musíme ručně povolit
     conn.execute("PRAGMA foreign_keys = ON;")
+    # zapnutí cizích klíčů
+    # ve SQLite bývají defaultně vypnuté,
+    # takže to radši aktivujeme při každém spojení
 
     return conn
 
 
 def init_db() -> None:
     # tahle funkce načte schema.sql a vytvoří / aktualizuje tabulky
-    # spouští se při startu aplikace
+    # volá se při startu aplikace
 
     if not SCHEMA_PATH.exists():
-        # když schema.sql chybí, je to problém
-        # bez schématu nevíme, jak má databáze vypadat
+        # pokud schema.sql neexistuje,
+        # nemá backend z čeho vytvořit tabulky
         app.logger.error(f"Chybí schema.sql: {SCHEMA_PATH}")
         raise FileNotFoundError(f"Chybí schema.sql: {SCHEMA_PATH}")
 
     app.logger.info("Inicializuji databázi ze schema.sql")
 
-    # načtení SQL schématu
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    # načteme celý obsah schema.sql jako text
 
-    # připojení k DB
     conn = get_db_connection()
+    # otevřeme spojení do databáze
 
-    # spuštění celého SQL skriptu
-    # executescript umí provést víc SQL příkazů najednou
     conn.executescript(schema_sql)
+    # executescript umí spustit více SQL příkazů najednou
+    # typicky CREATE TABLE a CREATE INDEX
 
-    # uložení změn
     conn.commit()
+    # uloží změny
 
-    # zavření spojení
     conn.close()
+    # zavře spojení
 
     app.logger.info("Databáze inicializována.")
 
 
-# databázi inicializujeme hned při startu appky
-# tím se zajistí, že tabulky existují ještě před první prací s nimi
 init_db()
+# databázi inicializujeme hned při startu aplikace
+# takže tabulky existují dřív,
+# než přijde první request od uživatele
 
 
 # ------------------------------------------------------------
 # 3.1) Helpery pro práci se souborem last_command.json
 # ------------------------------------------------------------
-# tady jsou funkce pro ukládání a načítání posledního příkazu auta
-# soubor slouží jako jednoduchý příklad práce se souborem mimo databázi
 
 def ensure_last_command_file() -> None:
     """
     Zajistí, že existuje soubor last_command.json
     a že obsahuje platný základní JSON.
-
-    Když soubor neexistuje nebo je prázdný/rozbitý,
-    vytvoří se výchozí obsah.
     """
     default_data = {
-        "cmd": None,
         "time": None,
     }
-    # výchozí stav:
-    # - cmd = poslední příkaz není známý
-    # - time = čas posledního příkazu není známý
+    # výchozí obsah souboru
+    # zatím neznáme čas poslední akce
 
     try:
-        # když soubor neexistuje, rovnou ho vytvoříme
         if not LAST_COMMAND_PATH.exists():
+            # když soubor neexistuje, vytvoříme nový
             LAST_COMMAND_PATH.write_text(
                 json.dumps(default_data, indent=4, ensure_ascii=False),
                 encoding="utf-8"
@@ -298,11 +326,11 @@ def ensure_last_command_file() -> None:
             app.logger.info("Vytvořen nový soubor last_command.json")
             return
 
-        # načtení existujícího obsahu
         raw = LAST_COMMAND_PATH.read_text(encoding="utf-8").strip()
+        # načteme obsah souboru jako text a ořízneme mezery
 
-        # když je soubor prázdný, opravíme ho
         if not raw:
+            # pokud je soubor prázdný, přepíšeme ho výchozím JSONem
             LAST_COMMAND_PATH.write_text(
                 json.dumps(default_data, indent=4, ensure_ascii=False),
                 encoding="utf-8"
@@ -310,31 +338,31 @@ def ensure_last_command_file() -> None:
             app.logger.warning("Soubor last_command.json byl prázdný, byl opraven.")
             return
 
-        # kontrola, že je obsah validní JSON
         data = json.loads(raw)
+        # pokusíme se text převést na Python objekt
 
-        # když to není dict, také opravíme
-        # očekáváme objekt typu:
-        # { "cmd": "...", "time": "..." }
         if not isinstance(data, dict):
+            # očekáváme JSON objekt / slovník
             raise ValueError("last_command.json nemá objekt JSON")
 
-        # doplnění chybějících klíčů
-        # kdyby soubor obsahoval jen část dat, dopočítáme minimum
-        if "cmd" not in data:
-            data["cmd"] = None
         if "time" not in data:
+            # pokud chybí klíč time, doplníme ho
             data["time"] = None
 
-        # soubor znovu uložíme v pěkném formátu
+        if "cmd" in data:
+            # z dřívější verze mohl v souboru zůstat klíč "cmd"
+            # ten už nechceme používat, tak ho smažeme
+            del data["cmd"]
+
         LAST_COMMAND_PATH.write_text(
             json.dumps(data, indent=4, ensure_ascii=False),
             encoding="utf-8"
         )
+        # soubor znovu uložíme pěkně zformátovaný
 
     except Exception as e:
-        # když je soubor poškozený, přepíšeme ho výchozí verzí
-        # aplikace tak nespadne jen kvůli špatnému JSON souboru
+        # když je soubor poškozený nebo nečitelný,
+        # obnovíme ho do výchozího stavu
         app.logger.warning(f"Soubor last_command.json byl poškozený, obnovuji ho: {e}")
         LAST_COMMAND_PATH.write_text(
             json.dumps(default_data, indent=4, ensure_ascii=False),
@@ -342,62 +370,52 @@ def ensure_last_command_file() -> None:
         )
 
 
-def load_last_command() -> Dict[str, Any]:
+def load_last_action() -> Dict[str, Any]:
     """
-    Načte poslední příkaz ze souboru last_command.json.
-
-    Vrací slovník ve tvaru:
-    {
-        "cmd": "STEER:L" nebo None,
-        "time": "2026-03-23 21:10:00" nebo None
-    }
+    Načte čas poslední akce ze souboru last_command.json.
     """
-    # nejdřív si ověříme, že soubor existuje a má správný formát
     ensure_last_command_file()
+    # nejdřív se ujistíme, že soubor existuje a má správný formát
 
     try:
-        # načtení JSON dat do Python slovníku
         data = json.loads(LAST_COMMAND_PATH.read_text(encoding="utf-8"))
+        # načteme JSON do Python slovníku
 
-        # pojistka, kdyby v JSON něco chybělo
         return {
-            "cmd": data.get("cmd"),
             "time": data.get("time"),
         }
+        # vrátíme slovník se stejným klíčem,
+        # jaký se očekává v dashboardu
 
     except Exception as e:
-        # když by se načtení nepovedlo, vrátíme aspoň bezpečný výchozí stav
+        # kdyby načítání selhalo, vrátíme bezpečný výchozí stav
         app.logger.error(f"Nepodařilo se načíst last_command.json: {e}")
         return {
-            "cmd": None,
             "time": None,
         }
 
 
-def save_last_command(cmd: str) -> None:
+def save_last_action_time() -> None:
     """
-    Uloží poslední odeslaný příkaz auta do JSON souboru.
-
-    Tohle je ta část projektu, která ukládá data do souboru.
+    Uloží čas poslední akce do JSON souboru.
     """
     data = {
-        "cmd": cmd,
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-    # ukládá se:
-    # - samotný příkaz
-    # - aktuální datum a čas jeho odeslání
+    # vytvoříme nový slovník s aktuálním časem
 
     LAST_COMMAND_PATH.write_text(
         json.dumps(data, indent=4, ensure_ascii=False),
         encoding="utf-8"
     )
+    # uložíme JSON do souboru
 
-    app.logger.info(f"Uložen poslední příkaz do souboru: {data}")
+    app.logger.info(f"Uložen čas poslední akce do souboru: {data}")
+    # vypíšeme informaci do logu
 
 
-# zajistíme existenci souboru hned při startu aplikace
 ensure_last_command_file()
+# zajistíme existenci souboru už při startu aplikace
 
 
 # ------------------------------------------------------------
@@ -407,28 +425,28 @@ ensure_last_command_file()
 def current_user() -> Optional[Dict[str, Any]]:
     # vrátí základní info o právě přihlášeném uživateli
     # nebo None, pokud nikdo přihlášený není
-    # tahle funkce se hodí hlavně do šablon, aby se v navbaru vědělo,
-    # jestli je uživatel přihlášený a jakou má roli
 
     if "user_id" not in session:
         return None
+        # když session neobsahuje user_id,
+        # uživatel není přihlášený
 
     return {
         "id": session.get("user_id"),
         "username": session.get("username"),
         "role": session.get("role"),
     }
+    # vrátíme malý slovník s informacemi o uživateli
+    # ten se pak hodí třeba do šablon
 
 
 def login_required() -> bool:
     # jednoduchá kontrola, jestli je uživatel přihlášený
-    # funguje podle toho, jestli session obsahuje user_id
     return "user_id" in session
 
 
 def admin_required() -> bool:
     # kontrola, jestli je uživatel přihlášený a zároveň admin
-    # používá se hlavně u /admin a mazacích route
     return login_required() and session.get("role") == "admin"
 
 
@@ -438,29 +456,52 @@ def admin_required() -> bool:
 
 def get_all_cars() -> List[Dict[str, Any]]:
     # načte všechna auta z databáze
-    # data se potom používají v dashboardu a při výběru aktivního auta
 
     conn = get_db_connection()
 
     rows = conn.execute(
         """
-        SELECT id, name, power_limit_percent, steer_angle_deg, created_at
+        SELECT id, name, color, steer_angle_deg, created_at
         FROM cars
         ORDER BY id;
         """
     ).fetchall()
-    # ORDER BY id zajistí stabilní pořadí aut
+    # načteme všechna auta
+    # ORDER BY id zajistí stabilní pořadí
 
     conn.close()
 
-    # převede sqlite rows na obyčejné dicty
-    # s dicty se pak lépe pracuje v Pythonu i v Jinja šablonách
     return [dict(r) for r in rows]
+    # sqlite Row převedeme na obyčejné slovníky,
+    # se kterými se lépe pracuje v Pythonu i v Jinja
+
+
+def get_car_by_id(car_id: int) -> Optional[Dict[str, Any]]:
+    # načte jedno konkrétní auto podle id
+
+    conn = get_db_connection()
+
+    row = conn.execute(
+        """
+        SELECT id, name, color, steer_angle_deg, created_at
+        FROM cars
+        WHERE id = ?
+        LIMIT 1;
+        """,
+        (car_id,),
+    ).fetchone()
+    # parametrizovaný dotaz chrání proti SQL injection
+    # LIMIT 1 znamená, že čekáme maximálně jeden řádek
+
+    conn.close()
+
+    return dict(row) if row else None
+    # pokud auto existuje, vrátíme slovník
+    # jinak vrátíme None
 
 
 def car_exists(car_id: int) -> bool:
     # ověří, jestli auto s daným id existuje
-    # používá se třeba při výběru auta přes API
 
     conn = get_db_connection()
 
@@ -468,6 +509,8 @@ def car_exists(car_id: int) -> bool:
         "SELECT 1 FROM cars WHERE id = ? LIMIT 1;",
         (car_id,)
     ).fetchone()
+    # SELECT 1 je rychlý způsob,
+    # jak jen ověřit existenci řádku
 
     conn.close()
     return row is not None
@@ -475,55 +518,144 @@ def car_exists(car_id: int) -> bool:
 
 def ensure_active_car_in_session() -> Optional[int]:
     # zajistí, že v session bude vybrané nějaké aktivní auto
-    # pokud žádné není, nastaví první auto z databáze
-    # to se hodí po loginu i při otevření dashboardu
+    # když tam žádné není, nastaví první dostupné
 
     cars = get_all_cars()
 
     if not cars:
-        # když v databázi nejsou žádná auta
-        # session active_car_id smažeme
+        # pokud v databázi nejsou žádná auta
         session.pop("active_car_id", None)
         app.logger.warning("V databázi nejsou žádná auta.")
         return None
 
-    # zkusíme načíst aktuálně uložené active_car_id ze session
     active = session.get("active_car_id")
+    # zkusíme vzít id auta ze session
 
     try:
         active_int = int(active) if active is not None else None
+        # převedeme hodnotu na int
     except Exception:
-        # kdyby bylo v session něco neplatného, ignorujeme to
         active_int = None
+        # když je ve session něco divného, ignorujeme to
 
-    # pokud je uložené validní existující auto, vrátíme ho
     if active_int is not None and car_exists(active_int):
         return active_int
+        # pokud je session validní a auto existuje, vrátíme ho
 
-    # jinak nastavíme první auto v databázi jako výchozí
     session["active_car_id"] = int(cars[0]["id"])
+    # jinak nastavíme první auto jako výchozí
+
     app.logger.info(f"Nastavuji výchozí active_car_id = {cars[0]['id']}")
     return int(cars[0]["id"])
+
+
+def sync_active_car_to_arduino(car_id: Optional[int]) -> bool:
+    """
+    Pošle do Arduina aktuální úhel zatáčení podle vybraného auta.
+    """
+
+    if car_id is None:
+        return False
+        # bez id auta nemáme co synchronizovat
+
+    if not ARDUINO_AVAILABLE:
+        return False
+        # když Arduino není dostupné, nemá smysl pokračovat
+
+    car = get_car_by_id(int(car_id))
+    if not car:
+        return False
+        # pokud auto v DB neexistuje, končíme
+
+    angle = int(car["steer_angle_deg"])
+    # vezmeme úhel zatáčení daného auta
+
+    try:
+        arduino_comm.send_line(f"STEER_ANGLE:{angle}")  # type: ignore[union-attr]
+        # pošleme do Arduina textový příkaz,
+        # aby si nastavilo úhel zatáčení pro dané auto
+
+        app.logger.info(
+            f"Synchronizován úhel zatáčení do Arduina: car_id={car_id}, steer_angle_deg={angle}"
+        )
+        return True
+    except Exception as e:
+        app.logger.error(f"Nepodařilo se synchronizovat úhel zatáčení do Arduina: {e}")
+        return False
+
+
+def get_motor_on_value() -> int:
+    """
+    Vrátí aktuálně nastavenou hodnotu pro zapnutí motoru.
+
+    Hodnota se drží v session, aby si ji uživatel mohl změnit za běhu.
+    Pokud tam není nebo je neplatná, vrátí se výchozí 1200.
+    """
+    raw = session.get("motor_on_value", DEFAULT_MOTOR_ON_VALUE)
+    # vezmeme hodnotu ze session
+    # nebo výchozí 1200, pokud tam nic není
+
+    try:
+        value = int(raw)
+    except Exception:
+        value = DEFAULT_MOTOR_ON_VALUE
+        # když je ve session neplatná hodnota, vrátíme default
+
+    if value < 1200 or value > 1300:
+        value = DEFAULT_MOTOR_ON_VALUE
+        # mimo rozsah nepovolíme
+
+    session["motor_on_value"] = value
+    # uložíme zpět už očištěnou / zvalidovanou hodnotu
+
+    return value
+
+
+def sync_motor_on_value_to_arduino(value: int) -> bool:
+    """
+    Pošle do Arduina aktuální hodnotu pro MOTOR_ON.
+
+    Povolený rozsah:
+    1200 až 1300
+    """
+
+    if not ARDUINO_AVAILABLE:
+        return False
+        # bez Arduina nic neposíláme
+
+    if value < 1200 or value > 1300:
+        return False
+        # ochrana rozsahu i na backendu
+
+    try:
+        arduino_comm.send_line(f"MOTOR_ON_VALUE:{value}")  # type: ignore[union-attr]
+        # pošleme hodnotu do Arduina,
+        # které si podle ní nastaví sílu / hodnotu motoru
+
+        app.logger.info(f"Synchronizována hodnota MOTOR_ON do Arduina: {value}")
+        return True
+    except Exception as e:
+        app.logger.error(f"Nepodařilo se synchronizovat MOTOR_ON_VALUE do Arduina: {e}")
+        return False
 
 
 # ------------------------------------------------------------
 # 6) ROUTES – stránky
 # ------------------------------------------------------------
+# Tady začínají jednotlivé URL adresy aplikace.
 
 @app.route("/")
 def index():
     # hlavní stránka projektu
-    # typicky domovská stránka s úvodními informacemi
     app.logger.info("Návštěva stránky /")
     return render_template("index.html", user=current_user())
-    # do šablony se posílá i user, aby šlo v HTML poznat,
-    # jestli je někdo přihlášený
+    # do šablony posíláme i current_user(),
+    # aby base.html věděl, zda je někdo přihlášený
 
 
 @app.route("/info")
 def info():
     # info stránka o projektu
-    # může obsahovat popis funkce projektu, technologie apod.
     app.logger.info("Návštěva stránky /info")
     return render_template("info.html", user=current_user())
 
@@ -538,48 +670,55 @@ def register():
         app.logger.info("Návštěva stránky /register [GET]")
         return render_template("register.html", user=current_user())
 
-    # načtení dat z formuláře
-    # request.form obsahuje data z HTML formuláře
     username = (request.form.get("username") or "").strip()
+    # načtení username z formuláře
+    # or "" chrání před None
+    # strip() odstraní mezery okolo
+
     password = request.form.get("password") or ""
+    # načtení hesla
+
     role = (request.form.get("role") or "user").strip().lower()
+    # načtení role
+    # když nepřijde nic, použije se "user"
+    # lower() sjednotí zápis třeba ADMIN -> admin
 
     app.logger.info(f"Pokus o registraci: username='{username}', role='{role}'")
 
-    # kontrola vyplnění
     if not username or not password:
+        # bez username a hesla nemá smysl pokračovat
         app.logger.warning("Registrace selhala: chybí username nebo password.")
         flash("Vyplň uživatelské jméno i heslo.", "error")
         return redirect(url_for("register"))
 
-    # povolené role
-    # tím se omezí, co může formulář uložit do DB
     if role not in ("user", "admin"):
+        # ochrana, aby do DB nešla neplatná role
         app.logger.warning(f"Registrace selhala: neplatná role '{role}'")
         flash("Role musí být 'user' nebo 'admin'.", "error")
         return redirect(url_for("register"))
 
-    # vytvoření hashe hesla
-    # heslo se tedy do databáze neukládá přímo
     pw_hash = generate_password_hash(password)
+    # heslo převedeme na hash
+    # do DB tedy nepůjde otevřený text
 
     try:
         conn = get_db_connection()
 
-        # vložení nového uživatele
         conn.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?);",
             (username, pw_hash, role),
         )
+        # vložení nového uživatele do databáze
 
         conn.commit()
+        # uloží změny
+
         conn.close()
 
         app.logger.info(f"Registrace úspěšná: username='{username}', role='{role}'")
 
     except sqlite3.IntegrityError:
-        # nejčastěji když už stejné username existuje
-        # typicky kvůli UNIQUE omezení v databázi
+        # typicky když už username existuje
         app.logger.warning(f"Registrace selhala: uživatel '{username}' už existuje.")
         flash("Uživatel s tímto jménem už existuje.", "error")
         return redirect(url_for("register"))
@@ -598,7 +737,6 @@ def login():
         app.logger.info("Návštěva stránky /login [GET]")
         return render_template("login.html", user=current_user())
 
-    # data z formuláře
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
 
@@ -611,28 +749,35 @@ def login():
 
     conn = get_db_connection()
 
-    # hledání uživatele podle username
     row = conn.execute(
         "SELECT id, username, password_hash, role FROM users WHERE username = ?;",
         (username,),
     ).fetchone()
+    # najdeme uživatele podle username
 
     conn.close()
 
-    # když uživatel neexistuje nebo nesedí heslo
     if row is None or not check_password_hash(row["password_hash"], password):
+        # pokud uživatel neexistuje
+        # nebo nesedí heslo
         app.logger.warning(f"Login selhal pro username='{username}'")
         flash("Špatné uživatelské jméno nebo heslo.", "error")
         return redirect(url_for("login"))
 
-    # uložení uživatele do session
-    # session si Flask drží mezi requesty, takže uživatel zůstane přihlášený
     session["user_id"] = int(row["id"])
     session["username"] = row["username"]
     session["role"] = row["role"]
+    # uložíme informace do session
+    # od teď je uživatel považovaný za přihlášeného
 
-    # po loginu se zajistí aktivní auto
-    ensure_active_car_in_session()
+    active_car_id = ensure_active_car_in_session()
+    # po loginu zajistíme, že existuje aktivní auto
+
+    sync_active_car_to_arduino(active_car_id)
+    # pošleme do Arduina úhel aktivního auta
+
+    sync_motor_on_value_to_arduino(get_motor_on_value())
+    # po loginu se do Arduina pošle i aktuální hodnota motoru
 
     app.logger.info(
         f"Login úspěšný: user_id={row['id']}, username='{row['username']}', role='{row['role']}'"
@@ -645,15 +790,15 @@ def login():
 @app.route("/logout")
 def logout():
     # odhlášení uživatele
-    # session se kompletně vymaže
 
     username = session.get("username")
     user_id = session.get("user_id")
+    # uložíme si info do logu ještě před vymazáním session
 
     app.logger.info(f"Logout: user_id={user_id}, username='{username}'")
 
-    # vymazání celé session
     session.clear()
+    # smažeme celou session
 
     flash("Odhlášeno.", "info")
     return redirect(url_for("index"))
@@ -662,7 +807,6 @@ def logout():
 @app.route("/dashboard")
 def dashboard():
     # dashboard je dostupný jen přihlášenému uživateli
-    # nepřihlášený uživatel bude přesměrován na login
 
     if not login_required():
         app.logger.warning("Přístup na /dashboard bez přihlášení.")
@@ -671,20 +815,30 @@ def dashboard():
 
     user = current_user()
     assert user is not None
-    # assert je tu pojistka pro typovou kontrolu
-    # logicky by user už neměl být None, protože login_required prošel
+    # assert je tu hlavně pro typovou jistotu
+    # logicky už víme, že uživatel je přihlášený
 
     user_id = int(user["id"])
 
     app.logger.info(f"Návštěva dashboardu: user_id={user_id}, username='{user['username']}'")
 
-    # načtení aut a aktivního auta
     cars = get_all_cars()
-    active_car_id = ensure_active_car_in_session()
+    # načteme auta do dropdownu
 
-    # načtení posledního příkazu ze souboru JSON
-    # tady je vidět část projektu "načítání dat ze souboru"
-    last_command = load_last_command()
+    active_car_id = ensure_active_car_in_session()
+    # zajistíme, že nějaké aktivní auto existuje
+
+    sync_active_car_to_arduino(active_car_id)
+    # při otevření dashboardu znovu synchronizujeme úhel
+
+    motor_on_value = get_motor_on_value()
+    # načteme aktuální hodnotu motoru ze session
+
+    sync_motor_on_value_to_arduino(motor_on_value)
+    # a pošleme ji do Arduina
+
+    last_action = load_last_action()
+    # načteme čas poslední akce z JSON souboru
 
     conn = get_db_connection()
 
@@ -725,8 +879,8 @@ def dashboard():
 
     conn.close()
 
-    # převod výsledků z DB na obyčejné slovníky
     rides = [dict(r) for r in rows]
+    # výsledky převedeme na obyčejné slovníky
 
     return render_template(
         "dashboard.html",
@@ -736,30 +890,25 @@ def dashboard():
         rides=rides,
         arduino_available=ARDUINO_AVAILABLE,
         arduino_error=ARDUINO_IMPORT_ERROR,
-        last_command=last_command,
+        last_action=last_action,
+        motor_on_value=motor_on_value,
     )
-    # dashboard.html potom dostane:
-    # - přihlášeného uživatele
-    # - seznam aut
-    # - aktivní auto
-    # - seznam jízd
-    # - informaci, jestli je dostupné Arduino
-    # - případnou chybu Arduina
-    # - poslední příkaz načtený ze souboru
+    # dashboard dostane vše potřebné pro vykreslení stránky
 
 
 @app.route("/api/select_car", methods=["POST"])
 def api_select_car():
     # API endpoint pro změnu aktivního auta
-    # volá ho frontend JS, ne klasický HTML formulář
+    # volá ho JavaScript z dashboardu
 
     if not login_required():
         app.logger.warning("api/select_car: nepřihlášený uživatel.")
         return jsonify({"error": "Not logged in"}), 401
 
-    # načtení JSON těla requestu
-    # silent=True znamená, že při špatném JSON request nespadne
     data = request.get_json(silent=True) or {}
+    # načteme JSON tělo requestu
+    # silent=True zabrání pádu při špatném JSON
+
     car_id = data.get("car_id")
 
     try:
@@ -768,19 +917,81 @@ def api_select_car():
         app.logger.warning(f"api/select_car: neplatné car_id='{car_id}'")
         return jsonify({"error": "Invalid car_id"}), 400
 
-    if not car_exists(car_id_int):
+    car = get_car_by_id(car_id_int)
+    if not car:
         app.logger.warning(f"api/select_car: auto neexistuje, car_id={car_id_int}")
         return jsonify({"error": "Car not found"}), 404
 
-    # uložení auta do session
-    # tím se zapamatuje vybrané auto i pro další requesty
     session["active_car_id"] = car_id_int
+    # nové auto si uložíme do session
+
+    synced = sync_active_car_to_arduino(car_id_int)
+    # a pošleme jeho úhel do Arduina
 
     app.logger.info(
         f"Uživatel user_id={session.get('user_id')} vybral active_car_id={car_id_int}"
     )
 
-    return jsonify({"ok": True, "active_car_id": car_id_int})
+    return jsonify({
+        "ok": True,
+        "active_car_id": car_id_int,
+        "steer_angle_deg": int(car["steer_angle_deg"]),
+        "synced_to_arduino": synced,
+    })
+    # vrátíme JSON odpověď pro frontend
+
+
+@app.route("/api/set_motor_on_value", methods=["POST"])
+def api_set_motor_on_value():
+    """
+    API endpoint pro změnu hodnoty MOTOR_ON.
+
+    Povolený rozsah:
+    1200 až 1300
+    """
+
+    if not login_required():
+        app.logger.warning("api/set_motor_on_value: nepřihlášený uživatel.")
+        return jsonify({"error": "Not logged in"}), 401
+
+    data = request.get_json(silent=True) or {}
+    value = data.get("value")
+    # načteme hodnotu poslanou z JavaScriptu
+
+    try:
+        value_int = int(value)
+    except Exception:
+        app.logger.warning(f"api/set_motor_on_value: neplatná hodnota '{value}'")
+        return jsonify({"error": "Hodnota musí být celé číslo."}), 400
+
+    if value_int < 1200 or value_int > 1300:
+        app.logger.warning(f"api/set_motor_on_value: hodnota mimo rozsah '{value_int}'")
+        return jsonify({"error": "Hodnota musí být v rozsahu 1200 až 1300."}), 400
+
+    session["motor_on_value"] = value_int
+    # uložíme si hodnotu do session
+
+    synced = sync_motor_on_value_to_arduino(value_int)
+    # pošleme ji i do Arduina
+
+    if not synced and ARDUINO_AVAILABLE:
+        # pokud je Arduino dostupné,
+        # ale synchronizace selhala, vrátíme chybu
+        return jsonify({"error": "Nepodařilo se odeslat hodnotu do Arduina."}), 500
+
+    save_last_action_time()
+    # změna motoru je také akce,
+    # takže uložíme čas poslední akce
+
+    app.logger.info(
+        f"api/set_motor_on_value: user_id={session.get('user_id')} nastavil MOTOR_ON_VALUE={value_int}"
+    )
+
+    return jsonify({
+        "ok": True,
+        "value": value_int,
+        "sent_to_arduino": synced,
+    })
 
 
 @app.route("/api/control", methods=["POST"])
@@ -796,17 +1007,15 @@ def api_control():
       THROTTLE:OFF
     """
 
-    # jen pro přihlášené
     if not login_required():
         app.logger.warning("api/control: nepřihlášený uživatel.")
         return jsonify({"error": "Not logged in"}), 401
 
-    # JSON data z frontend JS
     data = request.get_json(silent=True) or {}
     cmd = (data.get("cmd") or "").strip()
+    # načteme příkaz z JSONu
+    # strip() odstraní mezery a konce řádků
 
-    # whitelist povolených příkazů
-    # tím omezíme, co smí frontend poslat dál do Arduina
     allowed = {
         "STEER:L",
         "STEER:R",
@@ -814,24 +1023,32 @@ def api_control():
         "THROTTLE:ON",
         "THROTTLE:OFF",
     }
+    # whitelist povolených příkazů
+    # backend tak nepustí do Arduina cokoliv
 
     if cmd not in allowed:
         app.logger.warning(f"api/control: nepovolený příkaz '{cmd}'")
         return jsonify({"error": "Command not allowed"}), 400
 
-    # pokud není dostupný Arduino modul
     if not ARDUINO_AVAILABLE:
         app.logger.error(f"api/control: Arduino není dostupné: {ARDUINO_IMPORT_ERROR}")
         return jsonify({"error": f"Arduino není dostupné: {ARDUINO_IMPORT_ERROR}"}), 500
 
     try:
-        # odeslání příkazu do Arduina
-        # samotné posílání přes serial řeší arduino_comm.py
-        arduino_comm.send_line(cmd)  # type: ignore[union-attr]
+        if cmd.startswith("STEER:"):
+            # před zatáčením pošleme aktivní úhel
+            # tím zajistíme, že Arduino ví, o kolik má zatáčet
+            sync_active_car_to_arduino(session.get("active_car_id"))
 
-        # po úspěšném odeslání příkazu si ten příkaz uložíme do JSON souboru
-        # tohle je část "ukládání dat do souboru"
-        save_last_command(cmd)
+        if cmd == "THROTTLE:ON":
+            # před zapnutím motoru pošleme aktuální hodnotu MOTOR_ON
+            sync_motor_on_value_to_arduino(get_motor_on_value())
+
+        arduino_comm.send_line(cmd)  # type: ignore[union-attr]
+        # pošleme samotný příkaz do Arduina
+
+        save_last_action_time()
+        # uložíme čas poslední akce do JSON souboru
 
         app.logger.info(
             f"api/control: user_id={session.get('user_id')} poslal příkaz '{cmd}'"
@@ -846,15 +1063,16 @@ def api_control():
 @app.route("/api/ride/start", methods=["POST"])
 def api_ride_start():
     # start nové jízdy
-    # vytvoří nový záznam v tabulce rides
-    # duration_sec je na začátku NULL, protože jízda ještě běží
 
     if not login_required():
         app.logger.warning("api/ride/start: nepřihlášený uživatel.")
         return jsonify({"error": "Not logged in"}), 401
 
     user_id = int(session["user_id"])
+    # id přihlášeného uživatele
+
     car_id = ensure_active_car_in_session()
+    # id aktuálně vybraného auta
 
     if car_id is None:
         # bez auta nemá smysl jízdu zakládat
@@ -863,12 +1081,12 @@ def api_ride_start():
 
     conn = get_db_connection()
 
-    # kontrola, jestli už uživatel nemá aktivní nedokončenou jízdu
-    # tím zabráníme tomu, aby měl zároveň spuštěných víc jízd
     active = conn.execute(
         "SELECT id FROM rides WHERE user_id = ? AND duration_sec IS NULL ORDER BY id DESC LIMIT 1;",
         (user_id,),
     ).fetchone()
+    # zkontrolujeme, jestli už uživatel nemá rozjetou jízdu
+    # duration_sec IS NULL znamená, že jízda ještě nebyla ukončena
 
     if active:
         conn.close()
@@ -877,17 +1095,16 @@ def api_ride_start():
         )
         return jsonify({"error": "Ride already running", "ride_id": int(active["id"])}), 409
 
-    # vložení nové jízdy
-    # started_at se typicky doplní v DB default hodnotou
     cur = conn.execute(
         "INSERT INTO rides (user_id, car_id, duration_sec) VALUES (?, ?, NULL);",
         (user_id, int(car_id)),
     )
+    # založíme novou jízdu
+    # duration_sec je zatím NULL, protože běží
 
     conn.commit()
-
-    # id nově vytvořené jízdy
     ride_id = int(cur.lastrowid)
+    # uložíme id nově vytvořené jízdy
 
     conn.close()
 
@@ -901,7 +1118,6 @@ def api_ride_start():
 @app.route("/api/ride/stop", methods=["POST"])
 def api_ride_stop():
     # ukončení aktivní jízdy
-    # najde poslední běžící jízdu uživatele a dopočítá její délku
 
     if not login_required():
         app.logger.warning("api/ride/stop: nepřihlášený uživatel.")
@@ -910,7 +1126,6 @@ def api_ride_stop():
     user_id = int(session["user_id"])
     conn = get_db_connection()
 
-    # najdeme poslední nedokončenou jízdu uživatele
     row = conn.execute(
         """
         SELECT id
@@ -921,6 +1136,7 @@ def api_ride_stop():
         """,
         (user_id,),
     ).fetchone()
+    # najdeme poslední nedokončenou jízdu uživatele
 
     if not row:
         conn.close()
@@ -929,9 +1145,6 @@ def api_ride_stop():
 
     ride_id = int(row["id"])
 
-    # dopočet délky jízdy v sekundách
-    # julianday('now') vrátí aktuální čas
-    # odečte se started_at a výsledek se přepočítá na sekundy
     conn.execute(
         """
         UPDATE rides
@@ -940,23 +1153,26 @@ def api_ride_stop():
         """,
         (ride_id,),
     )
+    # dopočítáme délku jízdy v sekundách
+    # julianday('now') - julianday(started_at) = rozdíl v dnech
+    # * 86400 = převod na sekundy
 
     conn.commit()
 
-    # načtení uložené délky
     duration_row = conn.execute(
         "SELECT duration_sec FROM rides WHERE id = ?;",
         (ride_id,),
     ).fetchone()
+    # načteme uloženou délku jízdy
 
     conn.close()
 
     duration = int(duration_row["duration_sec"]) if duration_row and duration_row["duration_sec"] is not None else 0
+    # jistota, že dostaneme celé číslo
 
-    # pojistka pro případ záporné hodnoty
-    # teoreticky by neměla nastat, ale je lepší ji ošetřit
     if duration < 0:
         duration = 0
+        # bezpečnostní pojistka
 
     app.logger.info(
         f"api/ride/stop: user_id={user_id} ukončil jízdu ride_id={ride_id}, duration_sec={duration}"
@@ -968,29 +1184,28 @@ def api_ride_stop():
 @app.route("/admin")
 def admin():
     # admin panel je jen pro admina
-    # běžný uživatel sem nesmí
 
     if not admin_required():
         app.logger.warning(
             f"Pokus o přístup na /admin bez oprávnění. user_id={session.get('user_id')}"
         )
         abort(403)
+        # 403 = forbidden
 
     app.logger.info(f"Admin panel otevřen user_id={session.get('user_id')}")
 
     conn = get_db_connection()
 
-    # načtení všech uživatelů
     users_rows = conn.execute(
         "SELECT id, username, role, created_at FROM users ORDER BY id;"
     ).fetchall()
+    # načtení všech uživatelů
 
-    # načtení všech aut
     cars_rows = conn.execute(
-        "SELECT id, name, power_limit_percent, steer_angle_deg, created_at FROM cars ORDER BY id;"
+        "SELECT id, name, color, steer_angle_deg, created_at FROM cars ORDER BY id;"
     ).fetchall()
+    # načtení všech aut
 
-    # načtení všech jízd
     rides_rows = conn.execute(
         """
         SELECT
@@ -1005,6 +1220,8 @@ def admin():
         ORDER BY rides.started_at DESC;
         """
     ).fetchall()
+    # načtení všech jízd včetně JOINů,
+    # aby se rovnou zobrazovalo jméno uživatele a auta
 
     conn.close()
 
@@ -1017,17 +1234,11 @@ def admin():
         arduino_available=ARDUINO_AVAILABLE,
         arduino_error=ARDUINO_IMPORT_ERROR,
     )
-    # admin.html tak dostane kompletní přehled celé aplikace:
-    # - seznam uživatelů
-    # - seznam aut
-    # - seznam jízd
-    # - stav Arduino modulu
 
 
 @app.route("/admin/ride/<int:ride_id>/delete", methods=["POST"])
 def admin_delete_ride(ride_id: int):
     # smazání jízdy adminem
-    # route bere id jízdy přímo z URL
 
     if not admin_required():
         app.logger.warning(
@@ -1038,14 +1249,14 @@ def admin_delete_ride(ride_id: int):
     conn = get_db_connection()
 
     cur = conn.execute("DELETE FROM rides WHERE id = ?;", (ride_id,))
+    # smažeme konkrétní jízdu podle id
+
     conn.commit()
     conn.close()
 
     if cur.rowcount:
-        # rowcount > 0 znamená, že se opravdu něco smazalo
         app.logger.info(f"Admin smazal jízdu ride_id={ride_id}")
     else:
-        # jinak ride s tímto id neexistovala
         app.logger.warning(f"Admin mazal neexistující jízdu ride_id={ride_id}")
 
     flash(
@@ -1065,9 +1276,8 @@ def admin_delete_user(user_id: int):
         )
         abort(403)
 
-    # admin nemůže smazat sám sebe
-    # tím si nezruší vlastní přístup do aplikace
     if int(session.get("user_id", -1)) == user_id:
+        # admin si nesmí smazat vlastní účet
         app.logger.warning(f"Admin se pokusil smazat sám sebe. user_id={user_id}")
         flash("Nemůžeš smazat sám sebe.", "error")
         return redirect(url_for("admin"))
@@ -1075,6 +1285,8 @@ def admin_delete_user(user_id: int):
     conn = get_db_connection()
 
     cur = conn.execute("DELETE FROM users WHERE id = ?;", (user_id,))
+    # smažeme uživatele
+
     conn.commit()
     conn.close()
 
@@ -1103,6 +1315,8 @@ def admin_delete_car(car_id: int):
     conn = get_db_connection()
 
     cur = conn.execute("DELETE FROM cars WHERE id = ?;", (car_id,))
+    # smažeme auto podle id
+
     conn.commit()
     conn.close()
 
@@ -1119,14 +1333,14 @@ def admin_delete_car(car_id: int):
 
 
 if __name__ == "__main__":
-    # přímé spuštění Flask app
-    # tenhle blok se vykoná jen tehdy, když se app.py spustí přímo
+    # tenhle blok se spustí jen při přímém spuštění app.py
+    # ne při importu jako modulu
 
-    # při startu ještě jednou ověříme, že soubor pro poslední příkaz existuje
     ensure_last_command_file()
+    # ještě jednou zkontrolujeme JSON soubor
 
     app.logger.info("Spouštím Flask server na 0.0.0.0:5000 v debug režimu.")
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # debug=True = automatický reload při změně kódu + detailnější chybové hlášky
-    # host="0.0.0.0" = server je dostupný i z jiné zařízení v síti
-    # port=5000 = standardní port pro Flask
+    # debug=True = automatický reload a detailnější chyby
+    # host="0.0.0.0" = dostupné i z jiných zařízení v síti
+    # port=5000 = standardní Flask port

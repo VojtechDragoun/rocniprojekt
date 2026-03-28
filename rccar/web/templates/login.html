@@ -43,7 +43,7 @@
         {# blok pro pole uživatelského jména #}
 
         <label for="username">Uživatelské jméno</label>
-        {# textový popisek pro input #}
+        {# popisek pro input #}
 
         <input
           id="username"
@@ -53,10 +53,7 @@
           required
         >
         {# pole pro uživatelské jméno
-           id propojuje input s labelem
-           name="username" je důležité pro backend, podle toho Flask načte hodnotu
-           type="text" = obyčejné textové pole
-           placeholder je jen ukázka
+           name="username" je důležité pro backend
            required znamená, že pole musí být vyplněné #}
       </div>
 
@@ -73,10 +70,7 @@
           placeholder="••••••••"
           required
         >
-        {# pole pro heslo
-           type="password" skryje znaky při psaní
-           name="password" je název, pod kterým backend přečte heslo
-           required = povinné pole #}
+        {# type="password" skryje znaky při psaní #}
       </div>
 
       <button class="btn" type="submit">Přihlásit</button>
@@ -86,10 +80,8 @@
     <p style="margin-top: 12px;">
       Nemáš účet? <a href="{{ url_for('register') }}">Zaregistruj se</a>
     </p>
-    {# odkaz na registrační stránku
-       url_for('register') vytvoří správnou adresu na Flask route register #}
+    {# odkaz na registrační stránku #}
   </div>
   {# konec karty #}
 
 {% endblock %}
-{# konec content bloku #}

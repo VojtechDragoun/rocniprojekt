@@ -1,18 +1,22 @@
 # RC Car Project
 
 Popis projektu
+
 Tento projekt umožňuje ovládání RC auta přes webovou aplikaci.
 
-- Backend běží na Flasku (Python)
-- Komunikace probíhá mezi webem a Arduinem přes USB (serial)
-- Arduino ovládá:
-  - motor (pohon)
-  - servo (zatáčení)
+Projekt propojuje:
+- Flask backend v Pythonu
+- SQLite databázi
+- Arduino připojené přes USB serial komunikaci
 
-Uživatel se přihlásí do aplikace a následně může auto ovládat přes dashboard pomocí klávesnice.
+Arduino ovládá:
+- motor (pohon)
+- servo (zatáčení)
+
+Uživatel se přihlásí do aplikace a následně může auto ovládat přes dashboard pomocí klávesnice nebo tlačítek na stránce.
 
 Aplikace ukládá data o uživatelích a jízdách do SQLite databáze.
-Zároveň ukládá poslední ovládací příkaz auta do souboru last_command.json a při otevření dashboardu ho znovu načítá.
+Zároveň ukládá čas poslední akce do souboru last_command.json a při otevření dashboardu ho znovu načítá.
 
 ---
 
@@ -21,15 +25,13 @@ Instalace
 Instalace Python knihoven
 
 pip install flask
-pip install pytest
 pip install pyserial
 
 Arduino část
 
 Je potřeba:
-
-Mít nainstalovaný program Arduino IDE
-Také je potřeba mít stáhnutou knihovnu Servo pro Arduino
+- mít nainstalovaný program Arduino IDE
+- mít dostupnou knihovnu Servo pro Arduino
 
 Nahrání kódu do Arduino desky
 
@@ -46,8 +48,8 @@ Arduino musí být připojené k PC ještě před spuštěním webu.
 
 Zapojení
 
-Arduino + motor a servo musí být zapojené podle schématu:
-/docs/ (viz schéma zapojení)
+Arduino, motor a servo musí být zapojené podle schématu ve složce:
+/docs/
 
 ---
 
@@ -59,25 +61,26 @@ Aplikace se spouští ze složky:
 Spuštění:
 python app.py
 
-Po spuštění se v konzoli zobrazí odkaz (např. http://127.0.0.1:5000)
+Po spuštění se v konzoli zobrazí odkaz, například:
+http://127.0.0.1:5000
 
 ---
 
 Webové rozhraní
 
-Navigace (navbar):
-Domů – hlavní stránka
-Dashboard – ovládání auta
-Info – informace o projektu
-Admin – správa (jen pro admina)
+Navigace:
+- Domů – hlavní stránka
+- Dashboard – ovládání auta
+- Info – informace o projektu
+- Admin – správa databáze, pouze pro admina
 
 ---
 
 Přihlášení
 
-Admin účet:
-Uživatelské jméno: admin
-Heslo: Admin123
+Ukázkový admin účet:
+- uživatelské jméno: admin
+- heslo: Admin123
 
 ---
 
@@ -86,13 +89,16 @@ Funkce aplikace
 - registrace uživatele
 - přihlášení / odhlášení
 - role:
-    user
-    admin
+  - user
+  - admin
 - dashboard dostupný pouze po přihlášení
-- admin má přístup k rozšířeným funkcím (mazání v databázi)
+- admin má přístup k rozšířeným funkcím
 - ukládání jízd do databáze
-- ukládání posledního ovládacího příkazu do souboru JSON
-- načítání posledního ovládacího příkazu ze souboru na dashboardu
+- výběr auta v dashboardu
+- nastavení úhlu zatáčení podle vybraného auta
+- nastavení hodnoty motoru v rozsahu 1200 až 1300
+- ukládání času poslední akce do souboru JSON
+- načítání času poslední akce ze souboru na dashboardu
 
 ---
 
@@ -100,12 +106,16 @@ Ovládání auta
 
 Na stránce dashboard:
 
-W  pohyb dopředu
-A  zatáčení doleva
-D  zatáčení doprava
+- W = pohyb dopředu
+- A = zatáčení doleva
+- D = zatáčení doprava
 
-Po odeslání ovládacího příkazu se poslední příkaz uloží do souboru last_command.json.
-Po znovunačtení dashboardu se poslední uložený příkaz zobrazí uživateli.
+Po odeslání akce se do souboru last_command.json uloží čas poslední akce.
+Po znovunačtení dashboardu se tento uložený čas zobrazí uživateli.
+
+V dashboardu je také možné:
+- vybrat aktivní auto
+- změnit hodnotu motoru v rozsahu 1200 až 1300
 
 ---
 
@@ -117,13 +127,19 @@ SQLite (rccar.db)
 Umístění:
 /database/rccar.db
 
-Obsah:
-- uživatelé (včetně hashovaných hesel)
+Databáze ukládá:
+- uživatele
+- auta
 - jízdy
-- data aplikace
 
-Projekt ukládá a načítá data z/do databáze.
 Do databáze se ukládají hlavně uživatelé a záznamy jízd.
+
+Tabulka cars obsahuje například:
+- název auta
+- barvu auta
+- úhel zatáčení
+
+Tabulka rides propojuje uživatele a auta.
 
 ---
 
@@ -133,10 +149,9 @@ Použitý soubor:
 web/last_command.json
 
 Soubor obsahuje:
-- poslední odeslaný příkaz auta
-- čas uložení příkazu
+- čas poslední akce
 
-Při odeslání příkazu z dashboardu se tento soubor aktualizuje.
+Při odeslání akce z dashboardu se tento soubor aktualizuje.
 Při otevření dashboardu se data ze souboru načtou a zobrazí na stránce.
 
 Tím je splněno ukládání a načítání dat z/do souboru.
@@ -145,29 +160,43 @@ Tím je splněno ukládání a načítání dat z/do souboru.
 
 Inicializace databáze
 
-Soubor:
+Strukturu tabulek vytváří soubor:
+/database/schema.sql
+
+Ukázková data doplňuje soubor:
 /database/init_db.py
+
+Ten do databáze vloží:
+- 3 uživatele
+- 3 auta
+- 3 jízdy
 
 Spuštění:
 python init_db.py
 
-Tím se vytvoří nové tabulky (původní data budou smazána).
+Poznámka:
+Pokud chceš vytvořit databázi úplně znovu od nuly,
+je nejlepší nejdřív smazat starý soubor rccar.db
+a potom spustit init_db.py.
 
 ---
 
 Použité technologie
 
 Backend
-- Python (Flask)
+- Python
+- Flask
 - SQLite
 
 Frontend
 - HTML (Jinja2 šablony)
 - CSS
+- JavaScript
 
 Hardware
-- Arduino (C++)
-- Servo + motor
+- Arduino
+- Servo
+- Motor / ESC
 
 ---
 
@@ -176,7 +205,6 @@ Použité knihovny
 Python
 - flask – webový server
 - pyserial – komunikace s Arduinem
-- pytest – testování
 
 Flask závislosti
 - Werkzeug
@@ -190,7 +218,7 @@ Standardní knihovny
 - pathlib – práce s cestami
 - typing – typování
 - json – ukládání a načítání dat ze souboru
-- datetime – uložení času posledního příkazu
+- datetime – uložení času poslední akce
 
 ---
 
@@ -213,9 +241,6 @@ rccar/
 │   └── Schéma k zapojení servo motoru a arduino.png
 │
 ├── web/
-│   ├── __pycache__/
-│   │   └── arduino_comm.cpython-313.pyc
-│   │
 │   ├── static/
 │   │   ├── style.css
 │   │   └── images/
@@ -239,6 +264,7 @@ rccar/
 ---
 
 Autor
+
 Vojtěch Dragoun
 
 ---
@@ -246,5 +272,7 @@ Vojtěch Dragoun
 Poznámky
 
 Projekt vyžaduje připojené Arduino během běhu.
-Bez Arduino nebude ovládání funkční.
-Soubor last_command.json nesmí být prázdný, protože slouží pro ukládání a načítání posledního ovládacího příkazu.
+Bez Arduina nebude ovládání hardwaru funkční.
+
+Soubor last_command.json nesmí být prázdný,
+protože slouží pro ukládání a načítání času poslední akce.
